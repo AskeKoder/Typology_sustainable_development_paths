@@ -345,12 +345,20 @@ for (i in 1:m){
 }
 sum(is.na(complete2))
 
+#Save imputed data
+#write.csv(complete2, "ImputedDataLag1Lead2_maxit30.csv")
+
+#Get data
+filename <- file.choose()
+complete2 <- read.csv(filename)%>%
+  select(-X)
 
 
 #Check if imputations seem viable
 missingIndicators <- colnames(data)[which(colSums(is.na(data))>0)]
-var <- missingIndicators[12]
+var <- missingIndicators[19]
 var  # variable of interest
+
 
 #Visualize imputations, #Lags could be included 
 ggplot(
@@ -361,6 +369,10 @@ ggplot(
   geom_line(alpha = 0.15, color="blue") +
   geom_line(data=data[data$Country %in% unique(data$Country[which(is.na(data[,var]))]),]%>%
               mutate(.imp=0), alpha = 1, lwd=0.9,color="black") +
+  geom_line(data=data[data$Country %in% unique(data$Country[which(is.na(data[,var]))]),]%>%
+              mutate(.imp=0),
+            aes(x=SPI_year, y=Improved_water_source_proportion_of_pop*100),
+            alpha = 1, lwd=0.9,color="black") +
   facet_wrap(~ Country) +
   labs(color = "Imputation") +
   theme_minimal() +
@@ -372,5 +384,86 @@ ggplot(
 #2 access to electricity looks overestimated
 
 
-#Save imputed data
-#write.csv(complete2, "ImputedDataLag1Lead2_maxit30.csv")
+
+
+
+
+
+#Visualizing safely managed drinking water with improved water source
+var <- missingIndicators[19]
+var 
+ggplot(
+  complete2[complete2$Country %in% unique(data$Country[which(is.na(data[,var]))]),],
+  aes(x = SPI_year, y = !!sym(var), group = .imp)
+) +
+  #geom_point(alpha = 0.3) +
+  geom_line(alpha = 0.15, color="blue") +
+  geom_line(data=data[data$Country %in% unique(data$Country[which(is.na(data[,var]))]),]%>%
+              mutate(.imp=0), alpha = 1, lwd=0.9,color="black") +
+  geom_line(data=data[data$Country %in% unique(data$Country[which(is.na(data[,var]))]),]%>%
+              mutate(.imp=0),
+            aes(x=SPI_year, y=Improved_water_source_proportion_of_pop*100),
+            alpha = 1, lwd=0.9,color="red") +
+  facet_wrap(~ Country) +
+  labs(color = "Imputation") +
+  theme_minimal() +
+  ylim(
+    min(complete2[[var]], na.rm = TRUE),
+    max(complete2[[var]], na.rm = TRUE)
+  )
+
+
+#Visualizing safely managed sanitation with improved sanitatio
+var <- missingIndicators[13]
+var 
+ggplot(
+  complete2[complete2$Country %in% unique(data$Country[which(is.na(data[,var]))]),],
+  aes(x = SPI_year, y = !!sym(var), group = .imp)
+) +
+  #geom_point(alpha = 0.3) +
+  geom_line(alpha = 0.15, color="blue") +
+  geom_line(data=data[data$Country %in% unique(data$Country[which(is.na(data[,var]))]),]%>%
+              mutate(.imp=0), alpha = 1, lwd=0.9,color="black") +
+  geom_line(data=data[data$Country %in% unique(data$Country[which(is.na(data[,var]))]),]%>%
+              mutate(.imp=0),
+            aes(x=SPI_year, y=Improved_sanitation_proportion_of_pop*100),
+            alpha = 1, lwd=0.9,color="red") +
+  facet_wrap(~ Country) +
+  labs(color = "Imputation") +
+  theme_minimal() +
+  ylim(
+    min(complete2[[var]], na.rm = TRUE),
+    max(complete2[[var]], na.rm = TRUE)
+  )
+
+#plot maps of missingness 
+sumMis <- data %>%
+  group_by(SPI_countrycode) %>%
+  summarise(across(everything(), ~ sum(is.na(.))))%>%
+  select(SPI_countrycode,Prim_School_Enroll,Safely_managed_saniation,Safely_Managed_Drinking_Water)
+
+library(rnaturalearth)
+library(patchwork)
+world <- ne_countries(scale = "medium", returnclass = "sf",continent = c("south america","oceania","north america", "asia","europe","africa"))%>%
+  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'SDZ',"SDN"))%>%
+  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'PN1',"PNG"))%>%
+  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'PR1',"PRT"))%>%
+  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'SSD',"SSD*"))
+colnames(world)[57] <- "SPI_countrycode"
+
+world <- left_join(world, sumMis, 
+                   by = "SPI_countrycode")
+p <- list()
+for (i in 2:ncol(sumMis)){
+  p[[i-1]] <- ggplot() +
+    geom_sf(data = world, aes(fill = !!sym(colnames(sumMis)[i])/21*100), color = "white",size=0.5)+
+    labs(title = gsub("95","90",colnames(sumMis))[i])+ 
+    theme_bw() + 
+    theme(panel.border = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          axis.title = element_blank())
+}
+p[[1]]/p[[2]]/p[[3]]

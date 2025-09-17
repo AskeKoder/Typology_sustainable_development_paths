@@ -232,5 +232,5 @@ levelplot(as.matrix(naMap))
 extendedData <- extendedData%>%
   filter(SPI_year>=2000)
 
-write.csv(extendedData,"extendedData.csv")
+#write.csv(extendedData,"extendedData.csv")
 

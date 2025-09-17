@@ -1,6 +1,7 @@
 #Load libraries
 library(readxl)
 library(dplyr)
+library(tidyr)
 library(partitionComparison)
 library(NbClust)
 library(ggplot2)
@@ -119,6 +120,14 @@ clusterData <- function(data,m,minInformation){
 }
 
 #Run experiments-----------------------------------------
+#SPI baseline
+Baseline <- data[,c(1:56,68)]%>%
+  rename(imp=.imp)
+
+results_baseline <- clusterData(Baseline, m=15,minInformation = 0.8)
+
+#saveRDS(results_baseline,"results_baseline.RDS")
+
 #Get batch of experiments
 batch1 <- Experiments%>%
   select(1,3,4,5,6,7,8)%>%
@@ -128,6 +137,8 @@ batch1 <- Experiments%>%
 
 #Format names as in data
 rownames(batch1) <- colnames(data)[5:(ncol(data)-1)]
+rownames(batch1)[53:63] <- rownames(batch1)[53:63][c(1,3,5,4,2,8,6,7,9,10,11)] 
+
 
 #Remove duplicate column
 batch1 <- batch1%>%
@@ -164,6 +175,7 @@ batch2 <- Experiments%>%
 
 #Format names as in data
 rownames(batch2) <- colnames(data)[5:(ncol(data)-1)]
+rownames(batch2)[53:63] <- rownames(batch2)[53:63][c(1,3,5,4,2,8,6,7,9,10,11)] 
 
 #Remove duplicate column
 batch2 <- batch2%>%
@@ -185,17 +197,92 @@ for (i in 1:ncol(batch2)){
              ".imp"))%>%
     rename(imp=.imp)
   #Run test and save results
-  results_batch2[[i]] <- clusterData(expData, m=15,minInformation = 0.95)
+  results_batch2[[i]] <- clusterData(expData, m=15,minInformation = 0.90)
 }
 
 #saveRDS(results_batch2,"results_batch2.RDS")
 
+
+#Batch 3 ---------------------------------------
+#Get batch of experiments
+batch3 <- Experiments%>%
+  select(1,11,12,13)%>%
+  as.matrix()%>%
+  na.omit() # clear row of unrepresented dimension
+
+#Format names as in data
+rownames(batch3) <- colnames(data)[5:(ncol(data)-1)]
+rownames(batch3)[53:63] <- rownames(batch3)[53:63][c(1,3,5,4,2,8,6,7,9,10,11)] 
+
+#Remove duplicate column
+batch3 <- batch3%>%
+  data.frame()%>%
+  select(-c(1))%>%
+  mutate_all(~as.integer(.))
+
+#Define number of experiments to be conducted
+results_batch3 <- list()
+par <- c(0.8,0.9,0.8) #Set experiment specific levels of information
+for (i in 1:ncol(batch3)){
+  #Get data for experiment
+  id <- which(batch3[,i]>0)
+  indicators<- rownames(batch3)[id]
+  
+  #Make dataset for experiment
+  expData <- data%>%
+    select(c("Country","SPI_countrycode","SPI_year","Region",
+             indicators,
+             ".imp"))%>%
+    rename(imp=.imp)
+  #Run test and save results
+  results_batch3[[i]] <- clusterData(expData, m=15,minInformation = par[i])
+}
+
+#saveRDS(results_batch3,"results_batch3.RDS")
+
+#Batch 4 ---------------------------------------
+#Get batch of experiments
+batch4 <- Experiments%>%
+  select(1,14)%>%
+  as.matrix()%>%
+  na.omit() # clear row of unrepresented dimension
+
+#Format names as in data
+rownames(batch4) <- colnames(data)[5:(ncol(data)-1)]
+rownames(batch4)[53:63] <- rownames(batch4)[53:63][c(1,3,5,4,2,8,6,7,9,10,11)] 
+
+#Remove duplicate column
+batch4 <- batch4%>%
+  data.frame()%>%
+  select(-c(1))%>%
+  mutate_all(~as.integer(.))
+
+#Define number of experiments to be conducted
+results_batch4 <- list() #Set experiment specific levels of information
+for (i in 1:ncol(batch4)){
+  #Get data for experiment
+  id <- which(batch4[,i]>0)
+  indicators<- rownames(batch4)[id]
+  
+  #Make dataset for experiment
+  expData <- data%>%
+    select(c("Country","SPI_countrycode","SPI_year","Region",
+             indicators,
+             ".imp"))%>%
+    rename(imp=.imp)
+  #Run test and save results
+  results_batch4[[i]] <- clusterData(expData, m=15,minInformation = 0.8)
+}
+
+#saveRDS(results_batch4,"results_batch4.RDS")
+
 #Inspect results --------------------------------------------------
 filename <- file.choose()
 results <- readRDS(filename)
-batch <- batch1
+batch <- batch3 #Select which batch to analyse
 
-#Calculate
+
+#Calculate percentage of missing values
 fmis <- data.frame("Exp"=1:length(results),
                    "fmis"=rep(0,length(results)) )
 for (i in 1:length(results)){
@@ -239,10 +326,10 @@ ggplot(df1, aes(x = factor(Exp), y = Value)) +
     sec.axis = sec_axis(~ ., name = "% Missing values")  # inverse transform
   ) +
   scale_color_manual(values = c("Clusterings" = "black", "Final clustering" = "red","% Missing values"="blue" ,"Number of principal components used" = "green")) +
-  labs(x = "Last added indicator", title = "First Batch", color = "") +
+  labs(x = "", title = "Third batch", color = "") +
   theme_minimal()+
   theme(axis.text.x = element_text(angle=90 )) +
-  scale_x_discrete(labels=colnames(batch1))
+  scale_x_discrete(labels=colnames(batch))
 
 
 #Visualize the clusterings---------------------------------------
@@ -260,7 +347,7 @@ colnames(world)[57] <- "SPI_countrycode"
 clusterings <- data.frame(SPI_countrycode = unique(data$SPI_countrycode),
            matrices[[1]])
 #Name experiments and join
-colnames(clusterings)[2:7] <- colnames(batch)
+colnames(clusterings)[2:(ncol(batch)+1)] <- colnames(batch)
 world <- left_join(world, clusterings, 
                    by = "SPI_countrycode")
 
@@ -269,7 +356,7 @@ p <- list()
 for (i in 1:ncol(batch)){
   p[[i]] <- ggplot() +
     geom_sf(data = world, aes(fill = factor(!!sym(colnames(batch)[i]))), color = "white",size=0.5)+
-    labs(title = colnames(batch)[i])+ 
+    labs(title = gsub("95","90",colnames(batch))[i])+ 
     theme_bw() + 
     theme(panel.border = element_blank(),
           panel.grid.major = element_blank(),
@@ -281,4 +368,131 @@ for (i in 1:ncol(batch)){
     guides(fill="none")
 }
 (p[[1]]+p[[2]])/(p[[3]]+p[[4]])/(p[[5]]+p[[6]])
+p[[1]]+p[[2]]
+(p[[1]]+p[[2]])
+p[[3]]
+
+#Join experiments into a dataframe---------------------------------------------------
+SPI_baseline <-readRDS(file.choose())$finalClustering
+batch1 <- readRDS(file.choose())
+batch1 <- lapply(1:3, function(i) {
+  do.call(cbind, lapply(batch1, function(x) x[[i]]))
+})
+
+batch2 <- readRDS(file.choose())
+batch2 <- lapply(1:3, function(i) {
+  do.call(cbind, lapply(batch2, function(x) x[[i]]))
+})
+
+batch3 <- readRDS(file.choose())
+batch3 <- lapply(1:3, function(i) {
+  do.call(cbind, lapply(batch3, function(x) x[[i]]))
+})
+
+batch4 <- readRDS(file.choose())
+batch4 <- lapply(1:3, function(i) {
+  do.call(cbind, lapply(batch4, function(x) x[[i]]))
+})
+
+#Combine into data frame
+clusterVariations <- data.frame(cbind(SPI_baseline,
+                                      batch1[[1]],
+                                      batch2[[1]],
+                                      batch3[[1]],
+                                      batch4[[1]]))
+
+colnames(clusterVariations) <- c("SPI_baseline", colnames(Experiments)[3:ncol(Experiments)])
+
+#Add identifier columns
+unique(data$Country)==rownames(clusterVariations)
+clusterVariations$Country <- unique(data$Country)
+clusterVariations$SPI_countrycode <- unique(data$SPI_countrycode)
+#Reorder colunms
+clusterVariations <- clusterVariations%>%
+  relocate(c(Country,SPI_countrycode))
+
+#Save
+#saveRDS(clusterVariations, "clusterVariations.RDS")
+
+
+#Grid showing DLS dimension per cluster-----------------------------------------------------
+
+
+
+#Comparison of clusters from thesis and from new imputation----------------------------------------------------
+filename <- file.choose()
+results <- readRDS(filename)
+SPI_baseline <- results$finalClustering
+thesis_clusters <- read.csv("SPIClusters_thesis.csv")
+colnames(thesis_clusters) <- c("Country","Original Cluster")
+
+#Join dataset
+change <- data.frame("Country"=names(SPI_baseline),"SPI_baseline"=SPI_baseline)
+change <- left_join(change,thesis_clusters, by="Country")
+
+#Compare clusterings
+cbind(change[which(change$SPI_baseline != change$`Original Cluster`),1],
+      change[which(change$SPI_baseline != change$`Original Cluster`),2],
+      change[which(change$SPI_baseline != change$`Original Cluster`),3])
+      
+
+#Scale SPI indicators
+# scalingData <- data.frame("Indicator"= colnames(data),
+#                           "Best"=NA,
+#                           "Worst"=NA,
+#                           "Inverted"=NA)
+# for (i in 5:56){
+#   scalingData[i,2] <- readline(paste("What is the min of", scalingData[i,1]))
+#   scalingData[i,3] <- readline(paste("What is the max of", scalingData[i,1]))
+#   scalingData[i,4] <- readline(paste("Is", scalingData[i,1], "inverted?"))
+# }
+# 
+# colnames(scalingData) <- c("Indicator", "Best", "Worst", "Inverted")
+# scalingData <- scalingData %>%
+#   mutate_at(c(2,3,4),~as.numeric(.))
+#saveRDS(scalingData, "SPIScalingData.RDS")
+scalingData2 <- data.frame(readRDS("SPIScalingData.RDS"))
+
+scaled_data <- data
+i <- 43
+colnames(data)[i]
+for (i in 1:ncol(data)){
+  if (is.na(scalingData2[i,"Worst"])){
+    next
+  }
+  else{
+  scaled_data[,i] <- (data[,i]-scalingData2[i,"Worst"]) / (scalingData2[i,"Best"]-scalingData2[i,"Worst"])*100
+  } 
+}
+#Check which indicators break the scale
+which(colSums(scaled_data[5:56]>100)>0)
+which(colSums(scaled_data[5:56]<0)>0)
+
+scaled_data <- scaled_data %>%
+  mutate(across(5:56, ~pmax(0, pmin(100, .))))
+
+
+
+#Visualize how this has affected clusters
+dimmeans <- scaled_data%>%
+  mutate(BHN_mean = rowSums(across(5:22))/18,
+         FWB_mean = rowSums(across(23:37))/15,
+         OPP_mean = rowSums(across(38:56))/19)
+#Join clusters 
+dimmeans <- left_join(dimmeans,change, by ="Country")
+
+dimmeans_long <- dimmeans %>%
+  pivot_longer(cols = c(BHN_mean, FWB_mean,OPP_mean), names_to = "variable", values_to = "value")
+
+ggplot(dimmeans_long, aes(x = SPI_year, y = value, group=Country,color=factor(SPI_baseline))) +
+  geom_line(alpha=1)+
+facet_grid(SPI_baseline~variable,labeller = label_value) +
+  #theme_minimal() +
+  #scale_color_manual(values = cluster_colors)+
+  labs(title = "", x = "", y = "")+
+  guides(color="none")
+
+ggplot(dimmeans_long, aes(x = SPI_year, y = value, group=Country,color=factor(SPI_baseline))) +
+  geom_line(alpha=1)+
+  facet_grid(1~variable,labeller = label_value)
 
