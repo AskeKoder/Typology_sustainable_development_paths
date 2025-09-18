@@ -51,7 +51,7 @@ df_counts <- df_model %>%
 ggplot(df_counts, aes(x = cluster, y = n, fill = colonizer)) +
   geom_col(position = "dodge") +
   labs(
-    title = "Counts of B within each A",
+    title = "Counts of colonizers within each cluster",
     x = "Cluster",
     y = "Count",
     fill = "Colonizer"
@@ -194,15 +194,19 @@ ggplot(var_contrib, aes(x = reorder(Variable, DeltaChi2), y = DeltaChi2)) +
        y = "Δ Log-Likelihood (Chi²)") +
   theme_minimal(base_size = 14)
 
-#Try adding population density
+#Try adding school enrolment
 model_large <- update(model_base,~.+prienr1900,maxit=200)
-exp((AIC(model_large)-AIC(model_base))/2) #improvement~0 
+
+summary(model_large)
+car::Anova(model_large,type=2)
 
 #The final model is
 model_final <- multinom(cluster ~ ruleoflaw + colonizer, data = df_model,trace=TRUE)
 summary(model_final)
+car::Anova(model_final,type=2)
 
-#Visualize model
+
+#Visualize model--------------------
 
 # Make prediction grid
 newdata <- expand.grid(
@@ -222,6 +226,7 @@ pred_df <- cbind(newdata, preds) %>%
 # Plot
 ggplot(pred_df, aes(x = ruleoflaw, y = probability, color = cluster)) +
   geom_line(size = 1.2) +
+  geom_point(data=df_model, aes(x=ruleoflaw, y=1, color=cluster),alpha=0.5,size=2)+
   facet_wrap(~colonizer) +
   theme_minimal() +
   labs(title = "Predicted Probabilities by Colonizer and Rule of law")
@@ -232,3 +237,125 @@ correctness <- as.numeric(df_model$cluster) - as.numeric(predictions)==0
 accuracy <- sum(correctness) / length(correctness)
 print(accuracy)
 
+
+
+
+
+#test using only historical variables---------------------
+#Base model
+model_base <- multinom(cluster ~ 1, data = df_model,
+                       trace=TRUE)
+
+
+# Model without one variable at a time:
+model_col  <- multinom(cluster ~ colonizer, data = df_model,trace=TRUE)
+model_rule  <- multinom(cluster ~ ruleoflaw, data = df_model,trace=TRUE)
+model_set  <- multinom(cluster ~ lcapped, data = df_model,trace=TRUE)
+model_lat  <- multinom(cluster ~ lat_abst, data = df_model,trace=TRUE)
+model_pop <- multinom(cluster ~ lpd1500s, data = df_model,trace=TRUE)
+model_prot <- multinom(cluster ~ protmiss, data = df_model, trace=TRUE)
+model_school <- multinom(cluster ~ prienr1900, data = df_model, trace=TRUE)
+
+
+# Compare log-likelihoods
+delta_logLik <- function(model_big) {
+  2 * (logLik(model_big)-logLik(model_base))
+}
+
+var_contrib <- tibble::tibble(
+  Variable = c("Colonizer","Rule of law (2005)","Settler mortality", "Latitude", "Pop. density (1500)",
+               "Protestant missions", "School enrollment (1900)"),
+  DeltaChi2 = c(
+    delta_logLik(model_col),
+    delta_logLik(model_rule),
+    delta_logLik(model_set),
+    delta_logLik(model_lat),
+    delta_logLik(model_pop),
+    delta_logLik(model_prot),
+    delta_logLik(model_school)
+  )
+  
+)
+
+# Plot
+ggplot(var_contrib, aes(x = reorder(Variable, DeltaChi2), y = DeltaChi2)) +
+  geom_col(fill = "#3366CC") +
+  coord_flip() +
+  labs(title = "Variable Contributions to Cluster Prediction",
+       subtitle = "Based on Likelihood Ratio Tests (Δχ²)",
+       x = "Variable Removed from Model",
+       y = "Δ Log-Likelihood (Chi²)") +
+  theme_minimal(base_size = 14)
+
+#School enrollment is best historical predictor
+model_base <-multinom(cluster ~ prienr1900, data = df_model,trace=TRUE)
+model_col  <- multinom(cluster ~ prienr1900+colonizer, data = df_model,trace=TRUE)
+model_set  <- multinom(cluster ~ prienr1900+lcapped, data = df_model,trace=TRUE)
+model_lat  <- multinom(cluster ~ prienr1900+lat_abst, data = df_model,trace=TRUE, maxit=200)
+model_pop <- multinom(cluster ~ prienr1900+lpd1500s, data = df_model,trace=TRUE)
+model_prot <- multinom(cluster ~ prienr1900+protmiss, data = df_model, trace=TRUE)
+
+var_contrib <- tibble::tibble(
+  Variable = c("Colonizer","Settler mortality","Latitude" ,"Pop. density (1500)",
+               "Protestant missions"),
+  DeltaChi2 = c(
+    delta_logLik(model_col),
+    delta_logLik(model_set),
+    delta_logLik(model_lat),
+    delta_logLik(model_pop),
+    delta_logLik(model_prot)
+  )
+  
+)
+# Plot
+ggplot(var_contrib, aes(x = reorder(Variable, DeltaChi2), y = DeltaChi2)) +
+  geom_col(fill = "#3366CC") +
+  coord_flip() +
+  labs(title = "Variable Contributions to Cluster Prediction",
+       subtitle = "Based on Likelihood Ratio Tests (Δχ²)",
+       x = "Variable Removed from Model",
+       y = "Δ Log-Likelihood (Chi²)") +
+  theme_minimal(base_size = 14)
+
+
+#settler mortality is best historical predictor
+model_base <-multinom(cluster ~ prienr1900 + lcapped, data = df_model,trace=TRUE)
+model_col  <- multinom(cluster ~ prienr1900 + lcapped+colonizer, data = df_model,trace=TRUE,maxit=200)
+model_lat  <- multinom(cluster ~ prienr1900 + lcapped+lat_abst, data = df_model,trace=TRUE, maxit=200)
+model_pop <- multinom(cluster ~ prienr1900 + lcapped+lpd1500s, data = df_model,trace=TRUE)
+model_prot <- multinom(cluster ~ prienr1900 + lcapped+protmiss, data = df_model, trace=TRUE)
+
+var_contrib <- tibble::tibble(
+  Variable = c("Colonizer","Latitude" ,"Pop. density (1500)",
+               "Protestant missions"),
+  DeltaChi2 = c(
+    delta_logLik(model_col),
+    delta_logLik(model_lat),
+    delta_logLik(model_pop),
+    delta_logLik(model_prot)
+  )
+  
+)
+# Plot
+ggplot(var_contrib, aes(x = reorder(Variable, DeltaChi2), y = DeltaChi2)) +
+  geom_col(fill = "#3366CC") +
+  coord_flip() +
+  labs(title = "Variable Contributions to Cluster Prediction",
+       subtitle = "Based on Likelihood Ratio Tests (Δχ²)",
+       x = "Variable Removed from Model",
+       y = "Δ Log-Likelihood (Chi²)") +
+  theme_minimal(base_size = 14)
+
+
+model_large <- update(model_base,~.+colonizer, maxit=200)
+summary(model_large)
+car::Anova(model_large,type=2) #Colonizer is not significant
+
+model_final <- model_base
+summary(model_final)
+
+
+predictions <- predict(model_final, newdata = df_model)
+correctness <- as.numeric(df_model$cluster) - as.numeric(predictions)==0
+accuracy <- sum(correctness) / length(correctness)
+print(accuracy)

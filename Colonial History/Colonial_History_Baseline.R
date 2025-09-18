@@ -4,6 +4,7 @@ library(readr)
 library(dplyr)
 library(nnet)
 library(ggplot2)
+library(patchwork)
 
 # Load data
 agr <- read_excel("xcountry_data_full.xlsx")
@@ -19,6 +20,7 @@ agr      <- agr      %>% mutate(iso3 = toupper(trimws(as.character(iso3))))
 
 # Merge
 df <- clusters %>% inner_join(agr, by = "iso3")
+#write.csv(df,"dfColonial.csv")
 
 # Simplified colonizer grouping
 df$colonizer <- "Other"
@@ -33,7 +35,7 @@ df <- df %>%
 
 colnames(df)
 # Subset needed variables
-df_model <- df %>% select(cluster = SPI_baseline , colonizer, lcapped, lpd1500s, lat_abst,
+df_model <- df %>% select(iso3,cluster = SPI_baseline , colonizer, lcapped, lpd1500s, lat_abst,
                           ruleoflaw, protmiss, prienr1900) %>%
   na.omit()
 
@@ -51,7 +53,7 @@ df_counts <- df_model %>%
 ggplot(df_counts, aes(x = cluster, y = n, fill = colonizer)) +
   geom_col(position = "dodge") +
   labs(
-    title = "Counts of B within each A",
+    title = "Counts of colonizers within each cluster",
     x = "Cluster",
     y = "Count",
     fill = "Colonizer"
@@ -68,8 +70,8 @@ plot(pca_result$sdev^2/sum(pca_result$sdev^2))
 #Plotting for the first three dimensions
 pc_scores <- cbind(df_model%>%select(!is.numeric),pca_result$x[, 1:3])
 
-library(patchwork)
 
+#Plot dimensions
 p1 <- ggplot(data=pc_scores ,
              aes(x=PC1,y=PC2, colour = cluster,shape=colonizer))+
   geom_point()
@@ -193,20 +195,27 @@ ggplot(var_contrib, aes(x = reorder(Variable, DeltaChi2), y = DeltaChi2)) +
        y = "Δ Log-Likelihood (Chi²)") +
   theme_minimal(base_size = 14)
 
-#Try adding population density
+#Try adding school enrollment
 model_large <- update(model_base,~.+prienr1900,maxit=200)
-exp((AIC(model_large)-AIC(model_base))/2) #~0
+summary(model_large)
+
+#Type two anova because we don't have an interaction
+car::Anova(model_large, type="2")
 
 #The final model is the base because the large model yielded NaN estimates
 model_final <- model_base 
 summary(model_final)
+car::Anova(model_final, type="2")
+
+#What if we replace ruleoflaw with lcapped? 
+car::Anova(update(model_base,~.-ruleoflaw+lcapped), type="2") #also significant
+
 
 z <- summary(model_final)$coefficients / summary(model_final)$standard.errors
-p <- 2*(1-pnorm(abs(z)))
+p <- 2*(1-pnorm(abs(z),0,1))
 print(p)
 
 #Visualize model------------------------------------------------------------------------
-
 # Make prediction grid
 newdata <- expand.grid(
   colonizer = levels(df_model$colonizer),
@@ -226,9 +235,10 @@ pred_df <- cbind(newdata, preds) %>%
 # Plot
 ggplot(pred_df, aes(x = ruleoflaw, y = probability, color = cluster)) +
   geom_line(size = 1.2) +
+  geom_point(data=df_model, aes(x=ruleoflaw, y=1, color=cluster),alpha=0.5,size=2)+
   facet_wrap(~colonizer) +
   theme_minimal() +
-  labs(title = "Predicted Probabilities by Colonizer and Settler mortality")
+  labs(title = "Predicted Probabilities by Colonizer and Rule of law")
 
 #test accuracy
 summary(model_final)
@@ -249,14 +259,83 @@ df_dual <- df %>%
   mutate(across(c(logpgdp05, lcapped), mean, na.rm = TRUE))%>%
   add_count()
 
-coeff <- 4000
+coeff <- 1.7
 
 ggplot(df_dual, aes(x = cluster)) +
   geom_col(aes(y = lcapped/n, fill = colonizer)) +
   geom_text(aes(y = lcapped + 0.2, label=n))+
-  geom_line(aes(y = exp(logpgdp05)/coeff, group = 1), color = "black") +
+  geom_line(aes(y = logpgdp05/coeff, group = 1), color = "black") +
   scale_y_continuous(
     name = "log settler mortality",
-    sec.axis = sec_axis(~.*coeff, name = "GDP per capita (2005)")
+    sec.axis = sec_axis(~.*coeff, name = "log(GDP per capita) (2005)")
   )+
-  theme_minimal()
+  theme_minimal()+
+  labs(title="")
+
+
+
+
+
+
+#Test historical model---------------------------------------------
+model_test <- multinom(cluster ~ colonizer + lcapped + prienr1900,
+                        data=df_model,
+                        maxit=200)
+
+z <- summary(model_test)$coefficients / summary(model_test)$standard.errors
+p <- 2*(1-pnorm(abs(z),0,1))
+print(p)
+car::Anova(model_test,type=2)
+
+# Make prediction grid
+newdata <- expand.grid(
+  colonizer = levels(df_model$colonizer),
+  prienr1900 = seq(min(df_model$prienr1900), max(df_model$prienr1900), length.out = 50),
+  lcapped = seq(min(df_model$lcapped), max(df_model$lcapped), length.out = 50)
+)
+
+# Get predicted probabilities
+preds <- predict(model_test, newdata = newdata, type = "probs")
+
+# Convert to long format
+pred_df <- cbind(newdata, preds) %>%
+  tidyr::pivot_longer(cols = -c(colonizer,lcapped,prienr1900),
+                      names_to = "cluster", values_to = "probability")%>%
+  unique()
+
+pred_df_max <- pred_df %>%
+  group_by(colonizer,lcapped,prienr1900) %>%
+  slice_max(probability, with_ties = FALSE) %>%
+  ungroup()
+
+# Plot
+ggplot(pred_df_max, aes(x = lcapped, y = prienr1900, fill = cluster)) +
+  geom_tile() +
+  geom_point(data=df_model, aes(x=lcapped, y=prienr1900, fill=factor(cluster)), color="black",pch=21, alpha=0.5,size=3)+
+  facet_wrap(~colonizer) +
+  theme_minimal() +
+  labs(title = "Predicted Probabilities by Colonizer, Settler mortality and school enrollment (1900)")
+
+#test accuracy
+summary(model_test)
+predictions <- predict(model_test, newdata = df_model)
+correctness <- as.numeric(df_model$cluster) - as.numeric(predictions)==0
+accuracy <- sum(correctness) / length(correctness)
+print(accuracy)
+
+#Test with dls data from subnational survey article-----
+load(file.choose())
+dls_latest  <- dls_country %>%
+  group_by(country_name) %>%
+  slice_max(order_by = year_start_interviews, n = 1)%>%
+  rename(Country = country_name)
+
+df_dls <- df_model%>%
+  left_join(dls_latest, by="Country")
+
+fit <- lm(dls_index_country ~ colonizer+lcapped+prienr1900,
+          data=df_dls)
+summary(fit)
+
+#Bad overlap between the two data sets
+sum(is.na(df_dls$dls_index_country))/nrow(df_dls)

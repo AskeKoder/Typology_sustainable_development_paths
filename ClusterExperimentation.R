@@ -19,6 +19,8 @@ Experiments <- read_xlsx("IndicatorsForClusters.xlsx",sheet="Experiments")
 raw_data <- read.csv("extendedData.csv")%>%
   select(-X)
 
+#Read colonial data for filtering
+df_colonial <- read.csv("Colonial history/dfColonial.csv")
 
 #Functions ----------------------
 #Dissimilarity function
@@ -276,10 +278,85 @@ for (i in 1:ncol(batch4)){
 
 #saveRDS(results_batch4,"results_batch4.RDS")
 
+#Batch 5 ---------------------------------------
+#Get batch of experiments
+batch5 <- Experiments%>%
+  select(1,16)%>%
+  as.matrix()%>%
+  na.omit() # clear row of unrepresented dimension
+
+#Format names as in data
+rownames(batch5) <- colnames(data)[5:(ncol(data)-1)]
+rownames(batch5)[53:63] <- rownames(batch5)[53:63][c(1,3,5,4,2,8,6,7,9,10,11)] 
+
+#Remove duplicate column
+batch5 <- batch5%>%
+  data.frame()%>%
+  select(-c(1))%>%
+  mutate_all(~as.integer(.))
+
+#Define number of experiments to be conducted
+results_batch5 <- list() #Set experiment specific levels of information
+for (i in 1:ncol(batch5)){
+  #Get data for experiment
+  id <- which(batch5[,i]>0)
+  indicators<- rownames(batch5)[id]
+  
+  #Make dataset for experiment
+  expData <- data%>%
+    select(c("Country","SPI_countrycode","SPI_year","Region",
+             indicators,
+             ".imp"))%>%
+    rename(imp=.imp)
+  #Run test and save results
+  results_batch5[[i]] <- clusterData(expData, m=15,minInformation = 0.8)
+}
+
+#saveRDS(results_batch5,"results_batch5.RDS")
+
+#Batch 6 ---------------------------------------
+#Get batch of experiments
+batch6 <- Experiments%>%
+  select(1,17)%>%
+  as.matrix()%>%
+  na.omit() # clear row of unrepresented dimension
+
+#Format names as in data
+rownames(batch6) <- colnames(data)[5:(ncol(data)-1)]
+rownames(batch6)[53:63] <- rownames(batch6)[53:63][c(1,3,5,4,2,8,6,7,9,10,11)] 
+
+#Remove duplicate column
+batch6 <- batch6%>%
+  data.frame()%>%
+  select(-c(1))%>%
+  mutate_all(~as.integer(.))
+
+#Define number of experiments to be conducted
+results_batch6 <- list() #Set experiment specific levels of information
+for (i in 1:ncol(batch6)){
+  #Get data for experiment
+  id <- which(batch6[,i]>0)
+  indicators<- rownames(batch6)[id]
+  
+  #Make dataset for experiment
+  expData <- data%>%
+    select(c("Country","SPI_countrycode","SPI_year","Region",
+             indicators,
+             ".imp"))%>%
+    rename(imp=.imp)%>%
+    filter(Country %in%df_colonial$Country)
+  #Run test and save results
+  results_batch6[[i]] <- clusterData(expData, m=15,minInformation = 0.8)
+}
+
+#saveRDS(results_batch6,"results_batch6.RDS")
+
+
+
 #Inspect results --------------------------------------------------
 filename <- file.choose()
 results <- readRDS(filename)
-batch <- batch3 #Select which batch to analyse
+batch <- batch6 #Select which batch to analyse
 
 
 #Calculate percentage of missing values
@@ -317,7 +394,7 @@ colnames(df3) <- c("Run", "Exp", "Value")
 
 ggplot(df1, aes(x = factor(Exp), y = Value)) +
   geom_point(aes(color = "Clusterings"), alpha = 0.1,size=2.5) +
-  geom_line(data = df2, aes(x = Exp, y = optNum, color = "Final clustering"), size = 1.5) +
+  geom_point(data = df2, aes(x = Exp, y = optNum, color = "Final clustering"), size = 1.5) +
   # Add second dataset, scaled to match first axis
   geom_line(data = df3, aes(x = Exp, y = Value, color = "Number of principal components used"),linetype=2) +
   geom_line(data = fmis, aes(x=Exp, y=fmis, color="% Missing values"),linetype=2)+
@@ -346,6 +423,10 @@ colnames(world)[57] <- "SPI_countrycode"
 #Append clusters to world data
 clusterings <- data.frame(SPI_countrycode = unique(data$SPI_countrycode),
            matrices[[1]])
+if (batch == batch6){
+  clusterings <- data.frame(SPI_countrycode = unique(data$SPI_countrycode)[unique(data$Country)%in% df_colonial$Country],
+                            matrices[[1]])
+}
 #Name experiments and join
 colnames(clusterings)[2:(ncol(batch)+1)] <- colnames(batch)
 world <- left_join(world, clusterings, 
@@ -371,6 +452,7 @@ for (i in 1:ncol(batch)){
 p[[1]]+p[[2]]
 (p[[1]]+p[[2]])
 p[[3]]
+p[[1]]
 
 #Join experiments into a dataframe---------------------------------------------------
 SPI_baseline <-readRDS(file.choose())$finalClustering
@@ -394,14 +476,36 @@ batch4 <- lapply(1:3, function(i) {
   do.call(cbind, lapply(batch4, function(x) x[[i]]))
 })
 
+batch5 <- readRDS(file.choose())
+batch5 <- lapply(1:3, function(i) {
+  do.call(cbind, lapply(batch5, function(x) x[[i]]))
+})
+
+batch6 <- readRDS(file.choose())
+batch6 <- lapply(1:3, function(i) {
+  do.call(cbind, lapply(batch6, function(x) x[[i]]))
+})
+
+#Since fewer countries are used for batch 6 we must put the countries back in original order
+temp1 <- data.frame(batch6[[1]])%>%
+  mutate(Country = rownames(.))
+
+temp2 <- data.frame(SPI_baseline)%>%
+  mutate(Country = rownames(.))%>%
+  left_join(temp1, by="Country")%>%
+  select(batch6..1..)
+
 #Combine into data frame
 clusterVariations <- data.frame(cbind(SPI_baseline,
                                       batch1[[1]],
                                       batch2[[1]],
                                       batch3[[1]],
-                                      batch4[[1]]))
+                                      batch4[[1]],
+                                      batch5[[1]],
+                                      temp2))
 
-colnames(clusterVariations) <- c("SPI_baseline", colnames(Experiments)[3:ncol(Experiments)])
+colnames(clusterVariations) <- c("SPI_baseline", colnames(Experiments)[c(3,4,5,6,7,8,9,10,
+                                                                         11,12,13,14,16,17)])
 
 #Add identifier columns
 unique(data$Country)==rownames(clusterVariations)
