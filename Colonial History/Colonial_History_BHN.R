@@ -5,6 +5,7 @@ library(dplyr)
 library(nnet)
 library(ggplot2)
 library(patchwork)
+library(ggeffects)
 
 # Load data
 agr <- read_excel("xcountry_data_full.xlsx")
@@ -43,7 +44,6 @@ df_model <- df %>% select(iso3,cluster = BHN , colonizer, lcapped, lpd1500s, lat
 #Visualize data -----------------------------------------------------------
 plot(df_model,col=as.numeric(df_model$cluster))
 table(df_model$cluster, df_model$colonizer)
-
 
 #Count occurences per cluster
 df_counts <- df_model %>%
@@ -164,20 +164,18 @@ ggplot(var_contrib, aes(x = reorder(Variable, DeltaChi2), y = DeltaChi2)) +
        y = "Δ Log-Likelihood (Chi²)") +
   theme_minimal(base_size = 14)
 
-#Rule of law is the best predictor
-model_base <- multinom(cluster ~ ruleoflaw + colonizer, data = df_model,trace=TRUE)
-model_set  <- multinom(cluster ~ ruleoflaw + colonizer + lcapped, data = df_model,trace=TRUE,maxit=500)
-model_lat  <- multinom(cluster ~ ruleoflaw + colonizer + lat_abst, data = df_model,trace=TRUE,maxit=10000)
-model_pop <- multinom(cluster ~ ruleoflaw + colonizer + lpd1500s, data = df_model,trace=TRUE,maxit=200)
-model_prot <- multinom(cluster ~ ruleoflaw + colonizer + protmiss, data = df_model, trace=TRUE,maxit=200)
-model_school <- multinom(cluster ~ ruleoflaw + colonizer + prienr1900, data = df_model, trace=TRUE,maxit=200)
+#Rule of law is the best predictor, but settler mortality is second
+model_base <- multinom(cluster ~ lcapped + colonizer, data = df_model,trace=TRUE)
+model_lat  <- multinom(cluster ~ lcapped  + colonizer + lat_abst, data = df_model,trace=TRUE,maxit=10000)
+model_pop <- multinom(cluster ~ lcapped  + colonizer + lpd1500s, data = df_model,trace=TRUE,maxit=200)
+model_prot <- multinom(cluster ~ lcapped  + colonizer + protmiss, data = df_model, trace=TRUE,maxit=200)
+model_school <- multinom(cluster ~ lcapped  + colonizer + prienr1900, data = df_model, trace=TRUE,maxit=200)
 
 
 var_contrib <- tibble::tibble(
-  Variable = c("Settler mortality","Latitude" ,"Pop. density (1500)",
+  Variable = c("Latitude" ,"Pop. density (1500)",
                "Protestant missions", "School enrollment 1900"),
   DeltaChi2 = c(
-    delta_logLik(model_set),
     delta_logLik(model_lat),
     delta_logLik(model_pop),
     delta_logLik(model_prot),
@@ -195,20 +193,18 @@ ggplot(var_contrib, aes(x = reorder(Variable, DeltaChi2), y = DeltaChi2)) +
        y = "Δ Log-Likelihood (Chi²)") +
   theme_minimal(base_size = 14)
 
-#Try adding school enrollment
-model_large <- update(model_base,~.+prienr1900,maxit=200)
+#Try adding latitude
+model_large <- update(model_base,~.+lat_abst,maxit=200)
 summary(model_large)
 
 #Type two anova because we don't have an interaction
 car::Anova(model_large, type="2")
 
-#The final model is the base because the large model yielded NaN estimates
+#The final model is the base because lat_abst doesn't contribute significantly
 model_final <- model_base 
 summary(model_final)
 car::Anova(model_final, type="2")
 
-#What if we replace ruleoflaw with lcapped? 
-car::Anova(update(model_base,~.-ruleoflaw+lcapped), type="2") #also significant
 
 
 z <- summary(model_final)$coefficients / summary(model_final)$standard.errors
@@ -219,23 +215,23 @@ print(p)
 # Make prediction grid
 newdata <- expand.grid(
   colonizer = levels(df_model$colonizer),
-  ruleoflaw = seq(min(df_model$ruleoflaw), max(df_model$ruleoflaw), length.out = 100),
+  #ruleoflaw = seq(min(df_model$ruleoflaw), max(df_model$ruleoflaw), length.out = 100),
   lcapped = seq(min(df_model$lcapped), max(df_model$lcapped), length.out = 100)
 )
 
 # Get predicted probabilities
-preds <- predict(model_final, newdata = newdata, type = "probs")
+preds <- predict(model_final, newdata = newdata, type = "probs",interval="confidence")
 
 # Convert to long format
 pred_df <- cbind(newdata, preds) %>%
-  tidyr::pivot_longer(cols = -c(colonizer,lcapped,ruleoflaw),
+  tidyr::pivot_longer(cols = -c(colonizer,lcapped),
                       names_to = "cluster", values_to = "probability")%>%
   unique()
 
 # Plot
-ggplot(pred_df, aes(x = ruleoflaw, y = probability, color = cluster)) +
+ggplot(pred_df, aes(x = lcapped, y = probability, color = cluster)) +
   geom_line(size = 1.2) +
-  geom_point(data=df_model, aes(x=ruleoflaw, y=1, color=cluster),alpha=0.5,size=2)+
+  geom_point(data=df_model, aes(x=lcapped, y=1, color=cluster),alpha=0.5,size=2)+
   facet_wrap(~colonizer) +
   theme_minimal() +
   labs(title = "Predicted Probabilities by Colonizer and Rule of law")
@@ -243,6 +239,13 @@ ggplot(pred_df, aes(x = ruleoflaw, y = probability, color = cluster)) +
 #test accuracy
 summary(model_final)
 predictions <- predict(model_final, newdata = df_model)
+correctness <- as.numeric(df_model$cluster) - as.numeric(predictions)==0
+accuracy <- sum(correctness) / length(correctness)
+print(accuracy)
+
+
+#Compared to the null model ( which just uesses the most common cluster)
+predictions <- predict(multinom(cluster~1,df_model), newdata = df_model)
 correctness <- as.numeric(df_model$cluster) - as.numeric(predictions)==0
 accuracy <- sum(correctness) / length(correctness)
 print(accuracy)
@@ -348,3 +351,16 @@ summary(fit)
 
 #Bad overlap between the two data sets
 sum(is.na(df_dls$dls_index_country))/nrow(df_dls)
+
+
+
+#New method for plotting with confidence intervals
+test <- ggemmeans(model_final, terms = c("lcapped","colonizer"))
+
+test <- data.frame(test)
+ggplot(test, aes(x=x, y=predicted, color = factor(response.level)))+
+  geom_line()+
+  geom_line(aes(x=x,y=conf.low),linetype=2)+
+  geom_line(aes(x=x,y=conf.high),linetype=2)+
+  facet_wrap(~group)+
+  theme_minimal()

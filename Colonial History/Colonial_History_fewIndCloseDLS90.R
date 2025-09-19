@@ -129,22 +129,20 @@ ggplot(var_contrib, aes(x = reorder(Variable, DeltaChi2), y = DeltaChi2)) +
        y = "Δ Log-Likelihood (Chi²)") +
   theme_minimal(base_size = 14)
 
-#rule of law is the strongest predictors, We include it in the other models
-model_base <-multinom(cluster ~ ruleoflaw, data = df_model,trace=TRUE)
-model_school  <- multinom(cluster ~ ruleoflaw+prienr1900, data = df_model,trace=TRUE)
-model_set  <- multinom(cluster ~ ruleoflaw+lcapped, data = df_model,trace=TRUE,maxit=500)
-model_lat  <- multinom(cluster ~ ruleoflaw+lat_abst, data = df_model,trace=TRUE, maxit=200)
-model_pop <- multinom(cluster ~ ruleoflaw+lpd1500s, data = df_model,trace=TRUE)
-model_prot <- multinom(cluster ~ ruleoflaw+protmiss, data = df_model, trace=TRUE)
-model_col <- multinom(cluster ~ colonizer+ruleoflaw, data = df_model, trace=TRUE)
+#Settler mortality is the strongest predictors, We include it in the other models
+model_base <-multinom(cluster ~ lcapped, data = df_model,trace=TRUE, maxit=500)
+model_school  <- multinom(cluster ~ lcapped+prienr1900, data = df_model,trace=TRUE, maxit=500)
+model_lat  <- multinom(cluster ~ lcapped+lat_abst, data = df_model,trace=TRUE, maxit=500)
+model_pop <- multinom(cluster ~ lcapped+lpd1500s, data = df_model,trace=TRUE, maxit=500)
+model_prot <- multinom(cluster ~ lcapped+protmiss, data = df_model, trace=TRUE, maxit=500)
+model_col <- multinom(cluster ~ colonizer+lcapped, data = df_model, trace=TRUE, maxit=500)
 
 #
 var_contrib <- tibble::tibble(
-  Variable = c("School enrollment 1900","Settler mortality","Latitude" ,"Pop. density (1500)",
+  Variable = c("School enrollment 1900","Latitude" ,"Pop. density (1500)",
                "Protestant missions", "Colonizer"),
   DeltaChi2 = c(
     delta_logLik(model_school),
-    delta_logLik(model_set),
     delta_logLik(model_lat),
     delta_logLik(model_pop),
     delta_logLik(model_prot),
@@ -163,19 +161,17 @@ ggplot(var_contrib, aes(x = reorder(Variable, DeltaChi2), y = DeltaChi2)) +
   theme_minimal(base_size = 14)
 
 #Colonizer is the best predictor
-model_base <- multinom(cluster ~ ruleoflaw + colonizer, data = df_model,trace=TRUE)
-model_set  <- multinom(cluster ~ ruleoflaw + colonizer + lcapped, data = df_model,trace=TRUE,maxit=200)
-model_lat  <- multinom(cluster ~ ruleoflaw + colonizer + lat_abst, data = df_model,trace=TRUE,maxit=200)
-model_pop <- multinom(cluster ~ ruleoflaw + colonizer + lpd1500s, data = df_model,trace=TRUE,maxit=200)
-model_prot <- multinom(cluster ~ ruleoflaw + colonizer + protmiss, data = df_model, trace=TRUE,maxit=200)
-model_school <- multinom(cluster ~ ruleoflaw + colonizer + prienr1900, data = df_model, trace=TRUE,maxit=200)
+model_base <- multinom(cluster ~ lcapped + colonizer, data = df_model,trace=TRUE)
+model_lat  <- multinom(cluster ~ lcapped  + colonizer + lat_abst, data = df_model,trace=TRUE,maxit=200)
+model_pop <- multinom(cluster ~ lcapped  + colonizer + lpd1500s, data = df_model,trace=TRUE,maxit=200)
+model_prot <- multinom(cluster ~ lcapped  + colonizer + protmiss, data = df_model, trace=TRUE,maxit=200)
+model_school <- multinom(cluster ~ lcapped  + colonizer + prienr1900, data = df_model, trace=TRUE,maxit=200)
 
 
 var_contrib <- tibble::tibble(
-  Variable = c("Settler mortality","Latitude" ,"Pop. density (1500)",
+  Variable = c("Latitude" ,"Pop. density (1500)",
                "Protestant missions", "School enrollment 1900"),
   DeltaChi2 = c(
-    delta_logLik(model_set),
     delta_logLik(model_lat),
     delta_logLik(model_pop),
     delta_logLik(model_prot),
@@ -194,13 +190,13 @@ ggplot(var_contrib, aes(x = reorder(Variable, DeltaChi2), y = DeltaChi2)) +
   theme_minimal(base_size = 14)
 
 #Try adding settler mortlaity
-model_large <- update(model_base,~.+lcapped,maxit=200)
+model_large <- update(model_base,~.+prienr1900,maxit=200)
 summary(model_large)
 summary(model_base)
 car::Anova(model_large)
 
 #The final model is the base because the large model yielded NaN estimates
-model_final <- model_large
+model_final <- model_base
 summary(model_final)
 
 z <- summary(model_final)$coefficients / summary(model_final)$standard.errors
@@ -214,7 +210,6 @@ summary(model_final)
 # Make prediction grid
 newdata <- expand.grid(
   colonizer = levels(df_model$colonizer),
-  ruleoflaw = seq(min(df_model$ruleoflaw), max(df_model$ruleoflaw), length.out = 50),
   lcapped = seq(min(df_model$lcapped), max(df_model$lcapped), length.out = 50)
 )
 
@@ -223,19 +218,19 @@ preds <- predict(model_final, newdata = newdata, type = "probs")
 
 # Convert to long format
 pred_df <- cbind(newdata, preds) %>%
-  tidyr::pivot_longer(cols = -c(colonizer,lcapped,ruleoflaw),
+  tidyr::pivot_longer(cols = -c(colonizer,lcapped),
                       names_to = "cluster", values_to = "probability")%>%
   unique()
 
 pred_df_max <- pred_df %>%
-  group_by(colonizer,lcapped,ruleoflaw) %>%
+  group_by(colonizer,lcapped) %>%
   slice_max(probability, with_ties = FALSE) %>%
   ungroup()
 
 # Plot
-ggplot(pred_df_max, aes(x = lcapped, y = ruleoflaw, fill = cluster)) +
-  geom_tile() +
-  geom_point(data=df_model, aes(x=lcapped, y=ruleoflaw, fill=factor(cluster)), color="black",pch=21, alpha=0.5,size=3)+
+ggplot(pred_df, aes(x = lcapped, y = probability, color = cluster)) +
+  geom_line() +
+  geom_point(data=df_model, aes(x=lcapped, y=1, fill=factor(cluster)), color="black",pch=21, alpha=0.5,size=3)+
   facet_wrap(~colonizer) +
   theme_minimal() +
   labs(title = "Predicted Probabilities by Colonizer, Settler mortality and rule of law")
@@ -277,9 +272,13 @@ p <- 2*(1-pnorm(abs(z),0,1))
 print(p)
 
 car::Anova(model_test,type=2)
-car::Anova(update(model_test,~.-colonizer),type=2)
 model_test <- update(model_test,~.-colonizer)
 summary(model_test)
+
+z <- summary(model_test)$coefficients / summary(model_test)$standard.errors
+p <- 2*(1-pnorm(abs(z)))
+print(p)
+car::Anova(model_test,type=2)
 
 # Make prediction grid
 newdata <- expand.grid(
@@ -316,3 +315,8 @@ correctness <- as.numeric(df_model$cluster) - as.numeric(predictions)==0
 accuracy <- sum(correctness) / length(correctness)
 print(accuracy)
 
+
+predictions <- predict(multinom(cluster~1,data=df_model), newdata = df_model)
+correctness <- as.numeric(df_model$cluster) - as.numeric(predictions)==0
+accuracy <- sum(correctness) / length(correctness)
+print(accuracy)
