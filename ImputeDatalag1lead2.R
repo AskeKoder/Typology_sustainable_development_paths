@@ -5,9 +5,13 @@ library(lattice)
 library(tidyr)
 library(ggplot2)
 
+min_max_norm = function(x) {
+  (x - min(x,na.rm=TRUE)) / (max(x,na.rm=TRUE) - min(x,na.rm=TRUE)) }
+
 #Load data
-data <- read.csv("extendedData.csv")%>%
-  select(-X)
+data <- read.csv("extendedDataScaled.csv")%>%
+  select(-X)%>%
+  mutate(across(57:67, ~ min_max_norm(.x)*100)) #normalize extended variables too
 
 #Descriptive analysis -----------------------------------
 nYears <- length(unique(data$SPI_year))
@@ -71,53 +75,18 @@ pred <- quickpred(data_wide,
 table(rowSums(pred)) #100-1000 parameters for each model is too much
 
 # library(qgraph)
-colors <-rgb(colSums(is.na(data[,c(2,5:length(data))]))>0,
-             colSums(is.na(data[,c(2,5:length(data))]))>0,
-             colSums(is.na(data[,c(2,5:length(data))]))>0)
-
-par(mfrow=c(1,1))
-corr <- cor(data[,5:ncol(data)],use="complete.obs")
-labels <- 5:ncol(data)
-qgraph(corr, layout="spring",threshold= 0,
-       labels=labels,
-       vsize=3.5,repulsion=0.75,
-       color = colors)
+# colors <-rgb(colSums(is.na(data[,c(2,5:length(data))]))>0,
+#              colSums(is.na(data[,c(2,5:length(data))]))>0,
+#              colSums(is.na(data[,c(2,5:length(data))]))>0)
+# 
+# par(mfrow=c(1,1))
+# corr <- cor(data[,5:ncol(data)],use="complete.obs")
+# labels <- 5:ncol(data)
+# qgraph(corr, layout="spring",threshold= 0,
+#        labels=labels,
+#        vsize=3.5,repulsion=0.75,
+#        color = colors)
 keep <- colnames(data)[c(5,7,12,22,31,33,40,50)]
-
-# #Lighthouse approach
-# for (var in rownames(pred)) {
-#   #Disregard variables without missing values
-#   if (sum(pred[var,]) == 0) {next}
-#   #Disregard non numeric columns
-#   if (var == "Country_0" || var == "SPI_countrycode_1" || var =="Region_3") {next}
-# 
-#   #Exclude all variables from other years
-#   var_name <- substr(var,1,nchar(var)-4)
-#   year <- substr(var,nchar(var)-3,nchar(var))
-#   othr_yrs <- grep(paste0("*",year),rownames(pred), invert=TRUE)
-#   pred[var,othr_yrs] <-0
-# 
-#   #Set up lighthouse
-#   if (as.numeric(year)%% 2 ==1){
-#     var_othr_yrs <- paste0(var_name,c(2000:year)) #If uneven predict without lighthouse
-#   } else{
-#     var_othr_yrs <- paste0(var_name,c(2000:year,2020)) #If even predict with lighthouse
-#   }
-#   if(year ==2020){
-#     var_othr_yrs <- var_othr_yrs[rep(c(FALSE,TRUE),10)] # use uneven years to predict lighthouse
-#   }
-# 
-#   if(var_name %in% c("Vulnerable_employment_43yearID","Protein_supply_58yearID")){
-#     var_othr_yrs <- paste0(var_name,c(2000:year))
-#   }
-# 
-#   pred[var,var_othr_yrs] <- 1
-#   pred[var,var] <- 0
-# 
-#   #Include "keep" variables for the current year
-#   pred[var,paste0(keep,"yearID",as.integer(year))] <- 1
-# 
-# }
 
 #Moving time window
 for (var in rownames(pred)) {
@@ -152,35 +121,13 @@ for (var in rownames(pred)) {
 }
 
 
-# #Variables cannot have more predictors than observations
-# for (var in colnames(data_wide)) {
-#   n_obs <- sum(!is.na(data_wide[[var]]))  # number of observed values for this var
-#   predictors <- which(pred[var, ] == 1)   # current predictors
-#   
-#   if (length(predictors) > n_obs) {
-#     # Compute absolute correlations with the target variable (only on observed rows)
-#     cor_vals <- sapply(predictors, function(p) {
-#       target <- data_wide[[var]]
-#       predictor <- data_wide[[p]]
-#       cor(target, predictor, use = "pairwise.complete.obs")
-#     })
-#     
-#     # Select top n_obs predictors with highest absolute correlation
-#     best_preds <- predictors[order(abs(cor_vals), decreasing = TRUE)][1:n_obs]
-#     
-#     # Update predictor matrix
-#     pred[var, ] <- 0
-#     pred[var, best_preds] <- 1
-#   }
-# }
 #Avoid using the categorical variables as predictors
 pred[, "Country"] <- 0
 pred[, "SPI_countrycode"] <- 0
 table(rowSums(pred))
 
-#colnames(pred)[which(pred["Prim_School_EnrollyearID2014", ] == 1)]
 
-
+#Break direct feedback loops
 for (i in 1:ncol(pred)){
   for (j in (i+1):ncol(pred)){
     if (j>ncol(pred)){break}
@@ -204,8 +151,9 @@ for (i in 1:ncol(pred)){
     else {next}
   }
 }
-
 table(rowSums(pred))
+
+which(pred["Years_of_tertiary_schoolingyearID2008",]>0)
 
 #Prepare imputation 
 ini <- mice(data_wide,pred=pred,maxit=0)
@@ -235,8 +183,9 @@ pred [ ,"Prim_School_EnrollyearID2019"] <- 0
 #Set seed
 seed <- 123
 
-m <- 15
-maxit <- 30
+
+m <- 5
+maxit <- 10
 imp<- mice(data_wide,
            defaultMethod = c("pmm", "logreg", "polyreg", "polr"),
            pred = pred,
@@ -244,6 +193,7 @@ imp<- mice(data_wide,
            maxit = maxit,
            m = m,
            method = meth,
+           ridge = 1,
            post = post,
            print = TRUE,
            remove.collinear = FALSE #FALSE = columns are not automatically deleted due to high correlation, which happens in adjacent years
@@ -292,7 +242,7 @@ ncol(complete_long) #Two more columns are added in imputation
 colSums(is.na(complete_long))
 
 #Visualize imputations
-var <- colnames(data)[57]
+var <- colnames(data)[58]
 var  # variable of interest
 
 ggplot(
@@ -346,7 +296,7 @@ for (i in 1:m){
 sum(is.na(complete2))
 
 #Save imputed data
-#write.csv(complete2, "ImputedDataLag1Lead2_maxit30.csv")
+#write.csv(complete2, "ImputedDataLag1Lead2_maxit30_scaled.csv")
 
 #Get data
 filename <- file.choose()

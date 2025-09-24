@@ -33,7 +33,20 @@ files <- list(
 )
 
 #Load and prepare SPI Data --------------------------------
-SPI_Time_Series <- read_excel(files$SPI_Time_Series, sheet = "1990-2020 Time-series data")[, 1:132] %>%
+scaled = TRUE
+if (scaled){
+  SPI_Time_Series <- read_excel(files$SPI_Time_Series, sheet = "1990-2020 Time-series data")[, 1:132] %>%
+      select(-c(7:80)) %>% #Removes aggregated scores (SPI score, dimensions and component scores)
+      setNames(.[1, ]) %>% # Rename columns using the first row
+      slice(-1) %>%
+      rename("SPI_year" = "SPI \r\nyear",
+             "SPI_rank" = "SPI\r\nRank",
+             "SPI_countrycode" = "SPI \r\ncountry \r\ncode") %>%
+      filter(!is.na(Region))%>% #Keep countries only
+      select(-c(SPI_rank,Status))%>% #Remove rank and status
+      mutate(SPI_year = as.integer(SPI_year))
+}else{
+  SPI_Time_Series <- read_excel(files$SPI_Time_Series, sheet = "1990-2020 Time-series data")[, 1:132] %>%
     select(-c(7:24,77:132)) %>% #Removes aggregated scores (SPI score, dimensions and component scores)
     setNames(.[1, ]) %>% # Rename columns using the first row
     slice(-1) %>%
@@ -43,7 +56,7 @@ SPI_Time_Series <- read_excel(files$SPI_Time_Series, sheet = "1990-2020 Time-ser
     filter(!is.na(Region))%>% #Keep countries only
     select(-c(SPI_rank,Status))%>% #Remove rank and status
     mutate(SPI_year = as.integer(SPI_year))
-
+}
 nIndicators <- ncol(SPI_Time_Series)-4
 nYears <- length(unique(SPI_Time_Series$SPI_year))
 
@@ -234,5 +247,8 @@ extendedData <- extendedData%>%
 
 summary(extendedData)
 
+# if (scaled){
+#   write.csv(extendedData,"extendedDataScaled.csv")
+# }
 #write.csv(extendedData,"extendedData.csv")
 

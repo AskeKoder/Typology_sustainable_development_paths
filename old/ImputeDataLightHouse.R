@@ -5,7 +5,7 @@ library(lattice)
 library(tidyr)
 
 #Load data
-data <- read.csv("extendedData.csv")%>%
+data <- read.csv("extendedDataScaled.csv")%>%
   select(-X)
 
 #Descriptive analysis -----------------------------------
@@ -70,18 +70,18 @@ pred <- quickpred(data_wide,
 table(rowSums(pred)) #100-1000 parameters for each model is too much
 
 # library(qgraph)
-colors <-rgb(colSums(is.na(data[,c(2,5:length(data))]))>0,
-             colSums(is.na(data[,c(2,5:length(data))]))>0,
-             colSums(is.na(data[,c(2,5:length(data))]))>0)
-
-par(mfrow=c(1,1))
-corr <- cor(data[,5:ncol(data)],use="complete.obs")
-labels <- 5:ncol(data)
-qgraph(corr, layout="spring",threshold= 0,
-       labels=labels,
-       vsize=3.5,repulsion=0.75,
-       color = colors)
-keep <- colnames(data)[c(5,7,12,22,31,33,40,50)]
+# colors <-rgb(colSums(is.na(data[,c(2,5:length(data))]))>0,
+#              colSums(is.na(data[,c(2,5:length(data))]))>0,
+#              colSums(is.na(data[,c(2,5:length(data))]))>0)
+# 
+# par(mfrow=c(1,1))
+# corr <- cor(data[,5:ncol(data)],use="complete.obs")
+# labels <- 5:ncol(data)
+# qgraph(corr, layout="spring",threshold= 0,
+#        labels=labels,
+#        vsize=3.5,repulsion=0.75,
+#        color = colors)
+# keep <- colnames(data)[c(5,7,12,22,31,33,40,50)]
 
 #Lighthouse approach
 for (var in rownames(pred)) {
@@ -118,15 +118,36 @@ for (var in rownames(pred)) {
 
 }
 
+
+
+for (i in 1:ncol(pred)){
+  for (j in (i+1):ncol(pred)){
+    if (j>ncol(pred)){break}
+    #If variables are used to predict each other
+    if (pred[i,j] == 1 && pred[j,i] == 1){
+      #Get names of variables
+      var_i <- rownames(pred)[i]
+      var_j <- rownames(pred)[j]
+      #If more observations are missing in i than in j
+      if (sum(is.na(data_wide[,var_i])) >= sum(is.na(data_wide[,var_j]))){
+        #Do not use i as a predictor for j
+        pred[j,i] <- 0
+        print(paste(var_i, "no longer predicts:", var_j))
+      }
+      else{
+        #if j has more missing values do not use it as a predictor for i
+        pred[i,j] <- 0
+        print(paste(var_j, "no longer predicts:", var_i))
+      }
+    }
+    else {next}
+  }
+}
+table(rowSums(pred))
+
 #Avoid using the categorical variables as predictors
 pred[, "Country"] <- 0
 pred[, "SPI_countrycode"] <- 0
-table(rowSums(pred))
-
-#colnames(pred)[which(pred["Prim_School_EnrollyearID2014", ] == 1)]
-
-
-table(rowSums(pred))
 
 #Prepare imputation 
 ini <- mice(data_wide,pred=pred,maxit=0)
@@ -157,7 +178,7 @@ pred [ ,"Prim_School_EnrollyearID2019"] <- 0
 seed <- 123
 
 m <- 15
-maxit <- 15
+maxit <- 20
 imp<- mice(data_wide,
            defaultMethod = c("pmm", "logreg", "polyreg", "polr"),
            pred = pred,
@@ -285,4 +306,4 @@ ggplot(
 
 
 #Save imputed data
-write.csv(complete2, "ImputedDataLightHouse.csv")
+write.csv(complete2, "ImputedDataLightHouse_scaled.csv")

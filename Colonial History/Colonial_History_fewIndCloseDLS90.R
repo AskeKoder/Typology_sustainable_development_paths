@@ -307,7 +307,7 @@ ggplot(pred_df_max, aes(x = lcapped, y = prienr1900, fill = cluster)) +
   geom_point(data=df_model, aes(x=lcapped, y=prienr1900, fill=factor(cluster)), color="black",pch=21, alpha=0.5,size=3)+
   #facet_wrap(~colonizer) +
   theme_minimal() +
-  labs(title = "Predicted Probabilities by Settler mortality and school enrollment (1900)")
+  labs(title = "Most likely cluster (shaded) versus observed cluster (dots) ")
 
 #test accuracy
 predictions <- predict(model_test, newdata = df_model)

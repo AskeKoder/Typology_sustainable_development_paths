@@ -371,3 +371,9 @@ predictions <- predict(model_final, newdata = df_model)
 correctness <- as.numeric(df_model$cluster) - as.numeric(predictions)==0
 accuracy <- sum(correctness) / length(correctness)
 print(accuracy)
+
+
+predictions <- predict(multinom(cluster~1, data=df_model), newdata = df_model)
+correctness <- as.numeric(df_model$cluster) - as.numeric(predictions)==0
+accuracy <- sum(correctness) / length(correctness)
+print(accuracy)

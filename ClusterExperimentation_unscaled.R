@@ -8,7 +8,7 @@ library(ggplot2)
 library(reshape2)
 
 #Read imputed data 
-data <- read.csv("ImputedDataLag1Lead2_maxit30.csv")%>%
+data <- read.csv("ImputedDataLag1Lead2_maxit30_scaled.csv")%>%
   select(-c(X,.id))%>%
   relocate(.imp, .after=last_col())
 
