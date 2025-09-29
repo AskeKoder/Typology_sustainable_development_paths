@@ -14,15 +14,29 @@ data <- read.csv("ImputedDataLag1Lead2_maxit30_scaled.csv")%>%
   select(-c(X,.id))%>%
   relocate(.imp, .after=last_col())
 
-#Read experiment file
-Experiments <- read_xlsx("IndicatorsForClusters.xlsx",sheet="Experiments")
-
+#Read experiment file and set names in the correct order
+Experiments <- read_xlsx("IndicatorsForClusters.xlsx",sheet="Experiments")%>%
+  na.omit()%>%
+  data.frame()
+rownames(Experiments) <- colnames(data)[5:(ncol(data)-1)]
+rownames(Experiments) <- rownames(Experiments)[c(6,5,4,3,2,1,
+                                                   10,9,8,7,
+                                                   11,12,13,
+                                                   18,17,16,15,14,
+                                                   22,21,20,19,
+                                                   23,24,25,
+                                                   29,28,27,26,
+                                                   33,32,31,30,
+                                                   39,38,37,36,35,34,
+                                                   44,43,42,41,40,
+                                                   48,47,46,45,
+                                                   52,51,50,49,
+                                                   53,55,57,56,
+                                                   54,60,58,59,
+                                                   61,62,63)]
 #Read raw data for reference
 raw_data <- read.csv("extendedDataScaled.csv")%>%
   select(-X)
-
-#Read colonial data for filtering
-df_colonial <- read.csv("Colonial history/dfColonial.csv")
 
 #Functions ----------------------
 #Dissimilarity function
@@ -129,32 +143,14 @@ batch_scaled <- Experiments%>%
            "BHN_FWB",
            "No_non_DLS",
            "No_nonDLS_limExt",
-           "Few indicators_SPI_preferred",
-           "Few indicators_SPI_preferred_90",
+           "Few.indicators_SPI_preferred",
+           "Few.indicators_SPI_preferred_90",
            "Few_indicators_closest_DLS_coverage",
-           "Few_indicators_closest_DLS_coverage_90"
+           "Few_indicators_closest_DLS_coverage_90",
+           "No_non_DLS_BHNFWB"
            ))%>%
   as.matrix()%>%
   na.omit()
-
-#Format names as in data
-rownames(batch_scaled) <- colnames(data)[5:(ncol(data)-1)]
-rownames(batch_scaled) <- rownames(batch_scaled)[c(6,5,4,3,2,1,
-                                                 10,9,8,7,
-                                                 11,12,13,
-                                                 18,17,16,15,14,
-                                                 22,21,20,19,
-                                                 23,24,25,
-                                                 29,28,27,26,
-                                                 33,32,31,30,
-                                                 39,38,37,36,35,34,
-                                                 44,43,42,41,40,
-                                                 48,47,46,45,
-                                                 52,51,50,49,
-                                                 53,55,57,56,
-                                                 54,60,58,59,
-                                                 61,62,63)]
-
 
 #Remove duplicate column
 batch_scaled <- batch_scaled%>%
@@ -165,7 +161,7 @@ batch_scaled <- batch_scaled%>%
 #Define number of experiments to be conducted
 results_batch_scaled <- list()
 #Define boundary for the pca
-minInformation <- c(0.8,0.8,0.8,0.8,0.8,0.9,0.8,0.9)
+minInformation <- c(0.8,0.8,0.8,0.8,0.8,0.9,0.8,0.9,0.8)
 
 for (i in 1:ncol(batch_scaled)){
   #Get data for experiment
@@ -182,7 +178,8 @@ for (i in 1:ncol(batch_scaled)){
   results_batch_scaled[[i]] <- clusterData(expData, m=15,minInformation = minInformation[i])
 }
 
-#saveRDS(results_batch_scaled,"results_batch_lagleadscaled.RDS")
+#saveRDS(results_batch_scaled,"3_ClusterResults.RDS")
+
 
 #Inspect results --------------------------------------------------
 filename <- file.choose()
@@ -241,7 +238,6 @@ ggplot(df1, aes(x = factor(Exp), y = Value)) +
 
 
 #Visualize the clusterings---------------------------------------
-
 #Load gis map
 library(rnaturalearth)
 world <- ne_countries(scale = "medium", returnclass = "sf",continent = c("south america","oceania","north america", "asia","europe","africa"))%>%
@@ -263,6 +259,8 @@ colnames(clusterings)[2:(ncol(batch)+1)] <- colnames(batch)
 world <- left_join(world, clusterings, 
                    by = "SPI_countrycode")
 
+cluster_names <- 1:8
+cluster_colors <- setNames(scales::hue_pal()(9), cluster_names)
 library(patchwork)
 p <- list()
 for (i in 1:ncol(batch)){
@@ -276,8 +274,9 @@ for (i in 1:ncol(batch)){
           axis.line = element_blank(),
           axis.ticks = element_blank(),
           axis.title = element_blank())+
-   # guides(fill=guide_legend(title="Cluster",ncol=2))
-    guides(fill="none")
+    scale_fill_manual(values = cluster_colors)+
+   guides(fill=guide_legend(title="Cluster",ncol=1))
+    #guides(fill="none")
 }
 (p[[1]]+p[[2]]+p[[3]]+p[[4]])/(p[[5]]+p[[6]]+p[[7]]+p[[8]])
 p[[1]]+p[[2]]
@@ -297,11 +296,12 @@ clusterVariations <- data.frame(batch_scaled[[1]])
 colnames(clusterVariations) <- c("Baseline",
                                   "BHN_FWB",
                                   "No_non_DLS",
-                                  "No_nonDLS_limExt",
+                                  "No_non_DLS_limExt",
                                   "Few indicators_SPI_preferred",
                                   "Few indicators_SPI_preferred_90",
                                   "Few_indicators_closest_DLS_coverage",
-                                  "Few_indicators_closest_DLS_coverage_90")
+                                  "Few_indicators_closest_DLS_coverage_90",
+                                  "No_non_DLS_BHNFWB")
 
 #Add identifier columns
 unique(data$Country)==rownames(clusterVariations)
@@ -320,7 +320,7 @@ clusterVariations <- clusterVariations%>%
 #Comparison of clusters from thesis and from new imputation----------------------------------------------------
 filename <- file.choose()
 results <- readRDS(filename)
-SPI_baseline <- results$finalClustering
+SPI_baseline <- results[[1]]$finalClustering
 thesis_clusters <- read.csv("SPIClusters_thesis.csv")
 colnames(thesis_clusters) <- c("Country","Original Cluster")
 
@@ -333,43 +333,8 @@ cbind(change[which(change$SPI_baseline != change$`Original Cluster`),1],
       change[which(change$SPI_baseline != change$`Original Cluster`),2],
       change[which(change$SPI_baseline != change$`Original Cluster`),3])
       
-
-#Scale SPI indicators
-# scalingData <- data.frame("Indicator"= colnames(data),
-#                           "Best"=NA,
-#                           "Worst"=NA,
-#                           "Inverted"=NA)
-# for (i in 5:56){
-#   scalingData[i,2] <- readline(paste("What is the min of", scalingData[i,1]))
-#   scalingData[i,3] <- readline(paste("What is the max of", scalingData[i,1]))
-#   scalingData[i,4] <- readline(paste("Is", scalingData[i,1], "inverted?"))
-# }
-# 
-# colnames(scalingData) <- c("Indicator", "Best", "Worst", "Inverted")
-# scalingData <- scalingData %>%
-#   mutate_at(c(2,3,4),~as.numeric(.))
-#saveRDS(scalingData, "SPIScalingData.RDS")
-scalingData2 <- data.frame(readRDS("SPIScalingData.RDS"))
-
+#Visualize 
 scaled_data <- data
-i <- 43
-colnames(data)[i]
-for (i in 1:ncol(data)){
-  if (is.na(scalingData2[i,"Worst"])){
-    next
-  }
-  else{
-  scaled_data[,i] <- (data[,i]-scalingData2[i,"Worst"]) / (scalingData2[i,"Best"]-scalingData2[i,"Worst"])*100
-  } 
-}
-#Check which indicators break the scale
-which(colSums(scaled_data[5:56]>100)>0)
-which(colSums(scaled_data[5:56]<0)>0)
-
-scaled_data <- scaled_data %>%
-  mutate(across(5:56, ~pmax(0, pmin(100, .))))
-
-
 
 #Visualize how this has affected clusters
 dimmeans <- scaled_data%>%
@@ -393,4 +358,6 @@ facet_grid(SPI_baseline~variable,labeller = label_value) +
 ggplot(dimmeans_long, aes(x = SPI_year, y = value, group=Country,color=factor(SPI_baseline))) +
   geom_line(alpha=1)+
   facet_grid(1~variable,labeller = label_value)
+
+
 

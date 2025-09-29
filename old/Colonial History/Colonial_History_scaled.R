@@ -37,10 +37,10 @@ colnames(df)
 
 clusterSelection = "Few indicators_SPI_preferred"
 # Subset needed variables
-df_model <- df %>% select(iso3,cluster = clusterSelection , colonizer, lcapped, lpd1500s, lat_abst,
+df_model <- df %>% dplyr::select(iso3, cluster = clusterSelection , colonizer, lcapped, lpd1500s, lat_abst,
                           ruleoflaw, protmiss, prienr1900) %>%
-  na.omit()%>%
-  mutate(cluster=factor(cluster,levels=c(10,4,1,8,9,7,3,2,5,11,6)))
+  na.omit()#%>%
+  #mutate(cluster=factor(cluster,levels=c(10,4,1,8,9,7,3,2,5,11,6)))
 
 
 #Visualize data -----------------------------------------------------------
@@ -65,13 +65,13 @@ ggplot(df_counts, aes(x = cluster, y = n, fill = colonizer)) +
 
 #PCA -----------------------------------------------
 pca_result <- prcomp(df_model%>%
-                       select(is.numeric),scale=TRUE,center = TRUE)
+                       dplyr::select(is.numeric),scale=TRUE,center = TRUE)
 
 #Scree plot                    
 plot(pca_result$sdev^2/sum(pca_result$sdev^2))
 
 #Plotting for the first three dimensions
-pc_scores <- cbind(df_model%>%select(!is.numeric),pca_result$x[, 1:3])
+pc_scores <- cbind(df_model%>%dplyr::select(!is.numeric),pca_result$x[, 1:3])
 
 
 #Plot dimensions
@@ -209,9 +209,7 @@ car::Anova(model_large, type="2")
 model_final <- update(model_large,~.-colonizer)
 summary(model_final)
 car::Anova(model_final, type="2")
-
-#What if we replace ruleoflaw with lcapped? 
-car::Anova(update(model_large,~.-colonizer), type="2") #also significant
+anova(model_final,model_large)
 
 
 z <- summary(model_final)$coefficients / summary(model_final)$standard.errors
@@ -350,7 +348,7 @@ sum(is.na(df_dls$dls_index_country))/nrow(df_dls)
 #Run ordinal model ----------------------------------------------------------------
 library(ordinal)
 
-fit1 <- clm(cluster~ colonizer + lcapped + protmiss + lpd1500s+
+fit1 <- clm(cluster~ colonizer*lcapped + protmiss + lpd1500s+
              prienr1900+ lat_abst, data=df_model)
 anova(fit1)
 fit2 <- update(fit1,~.-lat_abst)
@@ -358,9 +356,54 @@ anova(fit2)
 
 fit3 <- update(fit2,~.-protmiss)
 anova(fit3)
+summary(fit3)
 
+#Test for proportional odds assumption
+nominal_test(fit3)
+#No evidence of non-proportional odds
+scale_test(fit3)
+scale_test(update(fit3,~.-colonizer,scale = ~colonizer))
+scale_test(update(fit3,~.-colonizer-lcapped,scale = ~colonizer+lcapped))
 
+fit4 <- update(fit3,~.-colonizer-lcapped,scale = ~colonizer+lcapped)
+nominal_test(fit4)
+scale_test(fit4)
+
+fit5 <- update(fit4,~.-prienr1900)
+nominal_test(fit5)
+scale_test(fit5)
+anova(fit5)
+#Generate dataset for predictions
+newdata <- expand.grid(
+  colonizer = levels(df_model$colonizer),
+  lpd1500s = mean(df_model$lpd1500s),
+  lcapped = seq(min(df_model$lcapped), max(df_model$lcapped), length.out = 100),
+  prienr1900 = mean(df_model$prienr1900)
+)
 #Predict
-newdata <- data.frame(x1 = c(-1, 0, 1), x2 = "A")
-predict(model, newdata, type = "prob")
+preds <- predict(fit3, newdata, type = "prob")
+#
+pred_df <- cbind(newdata, preds) %>%
+  tidyr::pivot_longer(cols = -c(colonizer,lcapped,lpd1500s,prienr1900),
+                      names_to = "cluster", values_to = "probability")%>%
+  unique()
 
+#plot
+ggplot(pred_df, aes(x = lcapped, y = probability, color = cluster)) +
+  geom_line(size = 1.2) +
+  #geom_point(data=df_model, aes(x=lcapped, y=1, color=cluster),alpha=0.5,size=2)+
+  facet_wrap(~colonizer) +
+  theme_minimal() +
+  labs(title = "Predicted Probabilities by Colonizer and Rule of law")
+
+library(ggeffects)
+test <- ggemmeans(fit3, terms = c("lcapped","colonizer"))
+
+test <- data.frame(test)
+ggplot(test, aes(x=x, y=predicted, color = factor(response.level)))+
+  geom_line()+
+  geom_line(aes(x=x,y=conf.low),linetype=2)+
+  geom_line(aes(x=x,y=conf.high),linetype=2)+
+  facet_wrap(~group)+
+  theme_minimal()+
+  ylim(0,1)
