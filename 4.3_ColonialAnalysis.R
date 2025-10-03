@@ -5,7 +5,7 @@ library(nnet)
 library(rnaturalearth)
 
 #load data
-folder <- "New colonial data/"
+folder <- "Data_Colonial/"
 
 #settler mortality
 setMort <- read.csv(paste0(folder,"SettlerMortality.csv"), sep=";", dec=",")%>%
@@ -59,7 +59,7 @@ df[df$iso3%in%col_never$Code,"colonizer"] <- "Not colonized" #Add the option to 
 
 #Load clusters
 clusterVariations <- readRDS("clustervariations_laglead_scaled.RDS")%>%
-  select(iso3=SPI_countrycode, cluster = No_non_DLS_BHNFWB)%>%
+  select(iso3=SPI_countrycode, cluster = Baseline)%>%
   mutate(cluster= factor(cluster))
 
 
@@ -116,10 +116,12 @@ p <- 2*(1-pnorm(abs(z),0,1))
 print(p)
 car::Anova(fit,type=2)
 
+
+
 #Aggregate model------------------------------------------------------
 #Aggregate clusters not well represented in colonial data
 df_agg <- df_model %>%
-  mutate(cluster = if_else(cluster %in%c("3","4","5"), "3,4,5", as.character(cluster)))%>%
+  mutate(cluster = if_else(cluster %in%c("2","3","5"), "2,3,5", as.character(cluster)))%>%
   mutate(cluster= factor(cluster),
          colonizer= factor(colonizer))%>%
   filter(!is.na(colonizer))
@@ -127,14 +129,61 @@ df_agg <- df_model %>%
 table(df_agg$cluster, df_agg$colonizer)
 
 fit_agg <- multinom(cluster~colonizer, data=df_agg)
-summary(fit_agg)
+summary(fit_agg) #Parameters do not look good - too many clusters
 
 z <- summary(fit_agg)$coefficients/ summary(fit_agg)$standard.errors
 p <- 2*(1-pnorm(abs(z),0,1))
 print(p)
 car::Anova(fit_agg,type=2)  
 
+#How about settler mortality 
+fit_agg_settmort <- multinom(cluster~settmort, data=df_agg)
+summary(fit_agg_settmort)
+z <- summary(fit_agg_settmort)$coefficients/ summary(fit_agg_settmort)$standard.errors
+p <- 2*(1-pnorm(abs(z),0,1))
+print(p)
+car::Anova(fit_agg_settmort,type=2) #Settler mortality is a highly signifcicant predictor
 
+#What if we include primary school enrollment
+car::Anova(update(fit_agg_settmort,~.+settmort*prienr1900),type=2) #Both settler mortality and primary school enrollment seems significant
+fit_agg <- update(fit_agg_settmort,~.+prienr1900,maxit=500)
+z <-  summary(fit_agg)$coefficients/ summary(fit_agg)$standard.errors
+p <- 2*(1-pnorm(abs(z),0,1))
+print(p)
+car::Anova(fit_agg,type=2) #Both are significant
+
+
+#Continuous graph
+preds <- data.frame(ggeffects::ggemmeans(fit_agg, terms=c("prienr1900")))
+ggplot(preds, aes(x=x, y=predicted,color = response.level))+
+  geom_line()+
+  geom_ribbon(
+    aes(ymin = conf.low, ymax = conf.high, fill = response.level),
+    alpha = 0.2,
+    color = NA
+  )+
+  labs(x="Primary school enrollment",
+       y="Probability",
+       fill="Colonizer")+
+  theme_minimal()
+
+
+preds <- data.frame(ggeffects::ggemmeans(fit_agg, terms=c("settmort")))
+ggplot(preds, aes(x=x, y=predicted,color = response.level))+
+  geom_line()+
+  geom_ribbon(
+    aes(ymin = conf.low, ymax = conf.high, fill = response.level),
+    alpha = 0.2,
+    color = NA
+  )+
+  labs(x="log(Settler mortality)",
+       y="Probability",
+       fill="Cluster")+
+  theme_minimal()+
+  guides(color="none")
+
+
+#Barchart for colonizer
 preds <- data.frame(ggeffects::ggemmeans(fit_agg, terms="colonizer"))
 ggplot(preds, aes(x=x, y=predicted,fill = response.level))+
   geom_col(position = position_dodge(width = 0.9)) +

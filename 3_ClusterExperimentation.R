@@ -141,10 +141,11 @@ clusterData <- function(data,m,minInformation){
 batch_scaled <- Experiments%>%
   select(c(1, "Baseline",
            "BHN_FWB",
+           "All_indicators",
            "No_non_DLS",
            "No_nonDLS_limExt",
-           "Few.indicators_SPI_preferred",
-           "Few.indicators_SPI_preferred_90",
+           "Few_indicators_SPI_preferred",
+           "Few_indicators_SPI_preferred_90",
            "Few_indicators_closest_DLS_coverage",
            "Few_indicators_closest_DLS_coverage_90",
            "No_non_DLS_BHNFWB"
@@ -161,7 +162,7 @@ batch_scaled <- batch_scaled%>%
 #Define number of experiments to be conducted
 results_batch_scaled <- list()
 #Define boundary for the pca
-minInformation <- c(0.8,0.8,0.8,0.8,0.8,0.9,0.8,0.9,0.8)
+minInformation <- c(0.8,0.8,0.8,0.8,0.8,0.8,0.9,0.8,0.9,0.8)
 
 for (i in 1:ncol(batch_scaled)){
   #Get data for experiment
@@ -220,22 +221,64 @@ colnames(df2) <- c("optNum","Exp")
 df3 <- melt(matrices[[3]])
 colnames(df3) <- c("Run", "Exp", "Value")
 
-ggplot(df1, aes(x = factor(Exp), y = Value)) +
-  geom_point(aes(color = "Clusterings"), alpha = 0.1,size=2.5) +
-  geom_point(data = df2, aes(x = Exp, y = optNum, color = "Final clustering"), size = 1.5) +
-  # Add second dataset, scaled to match first axis
-  geom_line(data = df3, aes(x = Exp, y = Value, color = "Number of principal components used"),linetype=2) +
-  geom_line(data = fmis, aes(x=Exp, y=fmis, color="% Missing values"),linetype=2)+
-  scale_y_continuous(
-    name = "Number of clusters",
-    sec.axis = sec_axis(~ ., name = "% Missing values")  # inverse transform
-  ) +
-  scale_color_manual(values = c("Clusterings" = "black", "Final clustering" = "red","% Missing values"="blue" ,"Number of principal components used" = "green")) +
-  labs(x = "", title = "Batch_scaled", color = "") +
-  theme_minimal()+
-  theme(axis.text.x = element_text(angle=90 )) +
-  scale_x_discrete(labels=colnames(batch))
+#
+names <- colnames(batch)
+names[3] <- "SPI_Extended"
+names[4] <- "DLS_dim_only"
+names[5] <- "DLS_dim_only_limExt"
+names[6] <- "DLSFew_coverage"
+names[7] <- "DLSFew_coverage_90"
+names[8] <- "DLSFew_bestAlignment"
+names[9] <- "DLSFew_bestAlignment_90"
+names[10] <- "DLS_dim_only_BHN_FWB"
 
+ggplot(df1, aes(x = factor(Exp), y = Value)) +
+  geom_point(aes(color = "Intermediate Clusterings"), alpha = 0.1,size=2.5) +
+  geom_point(data = df2, aes(x = Exp, y = optNum, color = "Final clustering"), size = 2,shape=4,stroke=1.5) +
+  # Add second dataset, scaled to match first axis
+  geom_line(data = df3, aes(x = Exp, y = Value, color = "PCs used"),linetype=2,linewidth=1) +
+  geom_line(data = fmis, aes(x=Exp, y=fmis, color="% Missing values"),linetype=3,linewidth=1)+
+  scale_y_continuous(
+    name = ""
+  ) +
+  scale_color_manual(values = c("Intermediate Clusterings" = "black", "Final clustering" = "red","% Missing values"="blue" ,"PCs used" = "green")) +
+  labs(x = "", title = "", color = "") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle=90)) +
+  scale_x_discrete(labels=names)
+
+
+
+#Cluster qgraph----------------------------
+make_adj <- function(clustering) {
+  outer(clustering, clustering, FUN = function(x,y) as.numeric(x==y))
+}
+adj <- matrix(0,173,173)
+rownames(adj) <- unique(data$SPI_countrycode)
+colnames(adj) <- unique(data$SPI_countrycode)
+
+for (i in 1:ncol(matrices[[1]])){
+  adj <- adj + make_adj(matrices[[1]][,i])
+}
+library(qgraph)
+# visualize averaged clustering
+groups <- matrices[[1]][,8]   # cluster assignments for each node
+
+# Define a color palette with 11 distinct colors
+palette11 <- rainbow(11)   # you can also try RColorBrewer for nicer palettes
+node_colors <- node_colors <- palette11[groups]
+qgraph(adj, layout = "spring", threshold = 0, color=node_colors, 
+       vsize=2.9,label.cex=1.2,repulsion=0.80, minimum=4)  # 'cut' removes weak edges
+legend("topleft",                       # position
+       legend = paste("Cluster", 1:11), # labels
+       col = palette11, 
+       pch = 19,                        # solid circle
+       pt.cex = 1.5, 
+       bty = "n")                       # no box
+
+
+test<-lm(apply(matrices[[2]],2,sd)~fmis$fmis+colSums(batch_scaled))
+summary(test)
 
 #Visualize the clusterings---------------------------------------
 #Load gis map

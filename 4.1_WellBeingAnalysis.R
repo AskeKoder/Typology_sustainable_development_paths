@@ -1,13 +1,18 @@
 #This script analyses the clusters resulting from using lag lead imputation on scaled indicators
-library(dplyr)
 library(countrycode) #For standardizing country names
+library(rnaturalearth)
+library(ggplot2)
+library(tidyr)
+library(readxl)
+library(dplyr)
+
 
 data <- read.csv("ImputedDataLag1Lead2_maxit30_scaled.csv")%>%
   select(-c("X",".id"))%>%
   relocate(.imp, .after=last_col())
 
 #Clusters from experiments
-clusterSelection <- "No_non_DLS_BHNFWB"
+clusterSelection <- "Baseline"
 clusters <- readRDS("clusterVariations_laglead_scaled.RDS")%>%
   select(Country,iso3 = SPI_countrycode,cluster = clusterSelection)
 
@@ -55,9 +60,162 @@ clusteredData <- data %>%
   data.frame()%>%
   mutate(cluster = as.factor(cluster))
 
+table(clusters$cluster)
+
+#PLot worldmap--------------------------------------------------------------------------------------
+world <- ne_countries(scale = "medium", returnclass = "sf",continent = c("south america","oceania","north america", "asia","europe","africa"))%>%
+  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'SDZ',"SDN"))%>%
+  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'PN1',"PNG"))%>%
+  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'PR1',"PRT"))%>%
+  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'SSD',"SSD*"))
+colnames(world)[57] <- "iso3"
+
+#Name experiments and join
+world <- left_join(world, clusters, 
+                   by = "iso3")
+
+cluster_names <- 1:length(unique(clusters$cluster))
+cluster_colors <- setNames(scales::hue_pal()(length(unique(clusters$cluster))), cluster_names)
+ggplot() +
+    geom_sf(data = world, aes(fill = factor(cluster)), color = "white",size=0.5)+
+    labs(title = "SPI Baseline")+ 
+    theme_bw() + 
+    theme(panel.border = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          axis.title = element_blank())+
+    scale_fill_manual(values = cluster_colors)+
+    guides(fill=guide_legend(title="Cluster",ncol=2))
+  #guides(fill="none")
 
 
-#Compare clusters with HDI and GDP--------------------------------------------------
+
+#Compare clusters with HDI table-------------------------------------------------------------------
+#Load HDI data 2022
+HDI_raw <- read_xlsx("Data_WellBeing/HDR23-24_Statistical_Annex_HDI_Table (1).xlsx")%>%
+  setNames(1:length(.))%>%
+  select(!c(4,6,8,10,12,14,15))%>%
+  setNames(.[4,])
+colnames(HDI_raw)[1] <- "HDI rank"
+colnames(HDI_raw)[2] <- "Country"
+
+HDI <- HDI_raw %>%
+  slice(-c(1,2,3,4,5,6))%>%
+  drop_na()
+
+str(HDI)
+HDI$`Human Development Index (HDI)` <- as.numeric(HDI$`Human Development Index (HDI)`)
+HDI$`Life expectancy at birth` <- as.numeric(HDI$`Life expectancy at birth`)
+HDI$`Expected years of schooling` <- as.numeric(HDI$`Expected years of schooling`)
+HDI$`Mean years of schooling` <- as.numeric(HDI$`Mean years of schooling`)
+HDI$`Gross national income (GNI) per capita`<- as.numeric(HDI$`Gross national income (GNI) per capita`)
+HDI$`GNI per capita rank minus HDI rank`<- as.numeric(HDI$`GNI per capita rank minus HDI rank`)
+
+HDI
+str(HDI)
+
+# Original country names (replace with your full list)
+original_countries <- c(
+  "Switzerland", "Norway", "Iceland", "Hong Kong, China (SAR)", "Denmark", "Sweden",
+  "Germany", "Ireland", "Singapore", "Australia", "Netherlands", "Belgium",
+  "Finland", "Liechtenstein", "United Kingdom", "New Zealand", "United Arab Emirates",
+  "Canada", "Korea (Republic of)", "Luxembourg", "United States", "Austria",
+  "Slovenia", "Japan", "Israel", "Malta", "Spain", "France", "Cyprus", "Italy",
+  "Estonia", "Czechia", "Greece", "Bahrain", "Andorra", "Poland", "Latvia",
+  "Lithuania", "Croatia", "Qatar", "Saudi Arabia", "Portugal", "San Marino",
+  "Chile", "Slovakia", "Türkiye", "Hungary", "Argentina", "Kuwait", "Montenegro",
+  "Saint Kitts and Nevis", "Uruguay", "Romania", "Antigua and Barbuda",
+  "Brunei Darussalam", "Russian Federation", "Bahamas", "Panama", "Oman", "Georgia",
+  "Trinidad and Tobago", "Barbados", "Malaysia", "Costa Rica", "Serbia", "Thailand",
+  "Kazakhstan", "Seychelles", "Belarus", "Bulgaria", "Palau", "Mauritius", "Grenada",
+  "Albania", "China", "Armenia", "Mexico", "Iran (Islamic Republic of)", "Sri Lanka",
+  "Bosnia and Herzegovina", "Saint Vincent and the Grenadines", "Dominican Republic",
+  "Ecuador", "North Macedonia", "Cuba", "Moldova (Republic of)", "Maldives", "Peru",
+  "Azerbaijan", "Brazil", "Colombia", "Libya", "Algeria", "Turkmenistan", "Guyana",
+  "Mongolia", "Dominica", "Tonga", "Jordan", "Ukraine", "Tunisia", "Marshall Islands",
+  "Paraguay", "Fiji", "Egypt", "Uzbekistan", "Viet Nam", "Saint Lucia", "Lebanon",
+  "South Africa", "Palestine, State of", "Indonesia", "Philippines", "Botswana",
+  "Jamaica", "Samoa", "Kyrgyzstan", "Belize", "Venezuela (Bolivarian Republic of)",
+  "Bolivia (Plurinational State of)", "Morocco", "Nauru", "Gabon", "Suriname", "Bhutan",
+  "Tajikistan", "El Salvador", "Iraq", "Bangladesh", "Nicaragua", "Cabo Verde", "Tuvalu",
+  "Equatorial Guinea", "India", "Micronesia (Federated States of)", "Guatemala",
+  "Kiribati", "Honduras", "Lao People's Democratic Republic", "Vanuatu",
+  "Sao Tome and Principe", "Eswatini (Kingdom of)", "Namibia", "Myanmar", "Ghana",
+  "Kenya", "Nepal", "Cambodia", "Congo", "Angola", "Cameroon", "Comoros", "Zambia",
+  "Papua New Guinea", "Timor-Leste", "Solomon Islands", "Syrian Arab Republic", "Haiti",
+  "Uganda", "Zimbabwe", "Nigeria", "Rwanda", "Togo", "Mauritania", "Pakistan",
+  "Côte d'Ivoire", "Tanzania (United Republic of)", "Lesotho", "Senegal", "Sudan",
+  "Djibouti", "Malawi", "Benin", "Gambia", "Eritrea", "Ethiopia", "Liberia",
+  "Madagascar", "Guinea-Bissau", "Congo (Democratic Republic of the)", "Guinea",
+  "Afghanistan", "Mozambique", "Sierra Leone", "Burkina Faso", "Yemen", "Burundi",
+  "Mali", "Chad", "Niger", "Central African Republic", "South Sudan", "Somalia"
+)
+
+# Named vector for replacements
+replacements <- c(
+  "Hong Kong, China (SAR)" = "Hong Kong",
+  "Iran (Islamic Republic of)" = "Iran",
+  "Korea (Republic of)" = "Korea, Republic of",
+  "Moldova (Republic of)" = "Moldova",
+  "Viet Nam" = "Vietnam",
+  "Palestine, State of" = "West Bank and Gaza",
+  "Eswatini (Kingdom of)" = "Eswatini",
+  "Micronesia (Federated States of)" = "Micronesia",
+  "Lao People's Democratic Republic" = "Laos",
+  "Côte d'Ivoire" = "Côte d'Ivoire",  # already correct
+  "Tanzania (United Republic of)" = "Tanzania",
+  "Russian Federation" = "Russia",
+  "Türkiye" = "Turkey",
+  "Syrian Arab Republic" = "Syria",
+  "Venezuela (Bolivarian Republic of)" = "Venezuela",
+  "Bolivia (Plurinational State of)" = "Bolivia",
+  "Gambia" = "Gambia, The",
+  "Congo (Democratic Republic of the)" = "Congo, Democratic Republic of",
+  "Congo" = "Congo, Republic of",
+  "North Macedonia"="Republic of North Macedonia"
+)
+
+# Apply replacements
+standardized_countries <- ifelse(HDI$Country %in% names(replacements),
+                                 replacements[HDI$Country],
+                                 HDI$Country)
+
+# Show the result
+standardized_countries
+HDI$Country <- standardized_countries
+
+#Join HDI data with clusters
+HDI_clust <- left_join(HDI, data.frame(Country = clusters$Country,
+                                       cluster = clusters$cluster,
+                                       by = "Country"))
+
+#Taiwan and North korea are not included in the HDI data
+#Calculate means and confidence intervals
+CI <- function(X){
+  mn <- mean(X)
+  se <- sd (X)/sqrt(length(X))
+  res <- tibble(
+    mean = mn,
+    add =  qt(1 - (0.05 / 2), length(X) - 1) * se
+  )
+  res <- round(res,2)
+  paste0(res[1]," ±",res[2])
+}
+
+summary <- HDI_clust%>%
+  drop_na(cluster)%>%
+  group_by(cluster)%>%
+  summarise_at(3:7,CI)
+
+for (i in 1:nrow(summary)){
+  print(paste(summary[i,],collapse=" & "))
+}
+
+
+
+#Compare clusters with HDI and GDP over time--------------------------------------------------
 #GDP (PPP) data
 raw_GDP <- read.csv("Data_WellBeing/GDPpercap PPP 2001 international world bank.csv", header = FALSE, stringsAsFactors = FALSE)
 GDP <- raw_GDP[-c(1:3), ] #Remove metadata
@@ -123,10 +281,12 @@ hulls <- HDI_clust %>%
 
 ggplot(HDI_clust,aes(x=log(GDP) ,y=HDI, color=factor(cluster), group=factor(Country)))+
   geom_point(alpha=0.5)+
-  # geom_path(alpha=0.3)+
-  geom_polygon(data = hulls, aes(log(GDP), HDI, fill = cluster, group = cluster),
+  geom_path(alpha=0.3)+
+  geom_polygon(data = hulls, aes(log(GDP), HDI, group = cluster, fill = cluster),
                alpha = 0.2, color = NA)+
-  theme_minimal()
+  theme_minimal()+
+  guides(fill="none")
+  
 
 
 
@@ -175,97 +335,79 @@ long_set <- long_median %>%
   left_join(long_q3, by = c("SPI_year", "cluster", "Variable")) %>%
   mutate(Variable = factor(Variable, levels = variables))
 
+#Filter
+long_set_filtered <- long_set%>%
+  filter(cluster%in%c(4,8))
+  #filter(cluster%in%c(1,7,11))
+  #filter(cluster%in%c(9,10))
+  #filter(cluster%in%c(2,3,5,6))
 
-ggplot(long_set, aes(x = SPI_year, y = Median, color = cluster, fill = cluster)) +
+
+cluster_names <- 1:length(unique(clusters$cluster))
+cluster_colors <- setNames(scales::hue_pal()(length(unique(clusters$cluster))), cluster_names)
+ggplot(long_set_filtered, aes(x = SPI_year, y = Median, color = cluster, fill = cluster)) +
   geom_ribbon(aes(ymin = Q1, ymax = Q3), alpha = 0.2, color = NA) +
   geom_line(linewidth = 0.8) +
-  facet_wrap(~ Variable, scales = "free_y") +
+  facet_wrap(~ Variable) +
   theme_minimal() +
-  # scale_fill_manual(values = cluster_colors)+
-  # scale_color_manual(values = cluster_colors) +
+  scale_fill_manual(values = cluster_colors)+
+  scale_color_manual(values = cluster_colors) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
   labs(x = "Year", y = "Cluster Median (with IQR)")+
   theme(plot.title = element_text(size = 5))
-
-
-long_median_ranked <- long_median %>%
-  group_by(SPI_year, Variable) %>%  # Group by year and variable (NOT group)
-  mutate(Rank = case_when(
-    Variable == "Share_Slums" ~ rank(-Median, ties.method = "min"),   # lower = better
-    TRUE                       ~ rank(Median, ties.method = "min")   # higher = better
-  ))%>%
-  ungroup()
-
-ggplot(long_median_ranked, aes(x = SPI_year, y = Rank, color = cluster, fill = cluster)) +
-  geom_line(linewidth = 0.8) +
-  facet_wrap(~ Variable, scales = "free_y") +
-  ylim(0, 11) +
-  theme_minimal() +
-  # scale_fill_manual(values = cluster_colors)+
-  # scale_color_manual(values = cluster_colors) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(x = "Year", y = "Cluster Median (with IQR)")+
-  theme(plot.title = element_text(size = 5))
-
-ggplot()+
-  geom_density(data=long_median_ranked,aes(x=Rank, group=cluster, color=cluster))
-
-factor(clusters$cluster,levels=c(10,4,1,8,9,7,3,2,5,11,6))
-
 
 
 #Plot radarcharts -----------------------------------------------------------
 library(fmsb)
 plot_list <- list()
-for (i in 1:8){
+clustering = "Baseline"
+nMax <- length(unique(clusters$cluster))
+for (i in 1:nMax){
   cluster <- i
-  clustering = "No_non_DLS_BHNFWB"
-  clusterVariations <- readRDS("clusterVariations_laglead_scaled.RDS")
-  
-  country_series <- data %>%
-    filter(SPI_countrycode %in% clusterVariations[clusterVariations[,clustering]==cluster,"SPI_countrycode"])
+  #Filter out other clusters
+  country_series <- clusteredData %>%
+    filter(cluster == as.character(i))
   
   #Calculate mean across imputed sets
   country_series_filtered <- country_series%>%
     filter(.imp!=0)%>%
-    dplyr::select(!c(Country,SPI_countrycode,Region))%>%
+    dplyr::select(!c(Country,iso3,Region,cluster))%>%
     group_by(SPI_year) %>%
     summarise_all(mean)
   
   #Select indicators
-  # id <- which(batch_scaled[,1]>0)
-  # indicators<- rownames(batch_scaled)[id]
-  
+  id <- which(batch_scaled[,clustering]>0) #Get indicators from batch
+  indicators<- rownames(batch_scaled)[id]
   country_series_filtered <- country_series_filtered%>%
-    select(SPI_year,all_of(indicators))
+    select(all_of(indicators))
   
   #Add min max levels to data for plotting
   mins <- data %>%
     summarize_all(min,na.rm=TRUE)%>%
-    select(SPI_year,all_of(indicators))
+    select(all_of(indicators))
   
   maxs <- data %>%
     summarize_all(max,na.rm=TRUE)%>%
-    select(SPI_year,all_of(indicators))
+    select(all_of(indicators))
   
   plottingData <- rbind(
-    maxs[2:35],
-    mins[2:35],
-    country_series_filtered[2:35]
+    maxs[id],
+    mins[id],
+    country_series_filtered[id]
   )
   
   #Sort columns according to DLS dimension
-  order <- order(Experiments[rownames(Experiments)%in% colnames(plottingData),"Related.DLS.dimension"])
-  plottingData <- plottingData[,order]%>%
-    mutate(Share_Slums = 100-Share_Slums)%>%
-    rename(Share_not_in_slums=Share_Slums)
-  
-  plottingData[1, "Share_not_in_slums"] <- 100
-  plottingData[2, "Share_not_in_slums"] <- 0
+  # order <- order(Experiments[rownames(Experiments)%in% colnames(plottingData),"Related.DLS.dimension"])
+  # plottingData <- plottingData[,order]%>%
+  #   mutate(Share_Slums = 100-Share_Slums)%>%
+  #   rename(Share_not_in_slums=Share_Slums)
+  # 
+  # plottingData[1, "Share_not_in_slums"] <- 100
+  # plottingData[2, "Share_not_in_slums"] <- 0
   #Define color scale
   library(scales)
-  cluster_names <- 1:8
-  cluster_colors <- setNames(scales::hue_pal()(9), cluster_names)
+  cluster_names <- 1:nMax
+  cluster_colors <- setNames(scales::hue_pal()(nMax), cluster_names)
   
   colors_border <- col_numeric(palette = c("grey",cluster_colors[cluster],cluster_colors[cluster],cluster_colors[cluster],"black"), domain = NULL)(0:20)
   colors_fill <- adjustcolor(colors_border, alpha.f = 0.4)
@@ -273,8 +415,9 @@ for (i in 1:8){
   
   
   par(mai=c(0,0,0.5,0))
-  png(filename = paste("Figures/RadarCharts/NoNonDLSBHNFWB/",i,".png"), width=700, height=700)
-  radarchart(plottingData, vlabels = colnames(plottingData),
+  par(bg=NA)
+  png(filename = paste("Figures/WellBeingAnalysis/Radarchart",clustering,"_Cluster",i,".png"), width=500, height=500)
+  radarchart(plottingData, vlabels = 4:55,
              na.itp = FALSE, col=rep(3,52),
              pcol = colors_border,
              axistype = 0,
@@ -289,3 +432,44 @@ for (i in 1:8){
   dev.off()
   
 }
+
+#DLS performance measure--------------------------------------------------------
+#Idea to measure people brought out of material poverty during the study period
+
+
+#Connect indicators with DLS dimensions
+dimIndicators <- data.frame("Housing"="Share_not_in_Slums",
+                            "Thermal comfort" = "Access_to_electricity",
+                            "Food and Nutrition" = "Nutritional_deficiencies",
+                            "Food prep/storage" = "Prevalence_of_cooking_with_coalperbiomass",
+                            "Water" = "Safely_Managed_Drinking_Water",
+                            "Sanitation" = "Safely_managed_saniation",
+                            "Provision of health care" = "Universal_health_coverage",
+                            "Education" = "Prim_School_Enroll",
+                            "Social connectedness" = "Mobile_and_landline_telephone_subscriptions")%>%
+  select(-Social.connectedness)
+
+
+DLSdata <- clusteredData %>%
+  mutate(Share_not_in_Slums = 100 - Share_Slums)%>%
+  select(Country,iso3,SPI_year,cluster,.imp, all_of(c(as.matrix(dimIndicators))))%>%
+  mutate(min_val = do.call(pmin, c(across(all_of(c(as.matrix(dimIndicators)))), na.rm = TRUE)))
+
+DLSdata$which_min <- ""
+for (i in 1:nrow(DLSdata)){
+  DLSdata$which_min[i] <- c(as.matrix(dimIndicators))[which(DLSdata[i,c(as.matrix(dimIndicators))]==DLSdata$min_val[i])]
+}
+
+DLSdata_summarized<- DLSdata%>%
+  group_by(SPI_year,Country,cluster)%>%
+  mutate(min_est = mean(min_val))%>%
+  filter(.imp==1)%>%
+  left_join(GDP%>%select(c(iso3,GDP_PPP,SPI_year=Year)), by=c("iso3","SPI_year"))
+
+
+ggplot(DLSdata_summarized%>%
+         filter(cluster==2),aes(x = log(GDP_PPP), y=min_est, group = Country, color=cluster,shape=factor(which_min)))+
+  geom_path()+
+  geom_point()+
+  scale_shape_manual(values = c(0:8))#+
+  #facet_wrap(~which_min, scales="free_y")
