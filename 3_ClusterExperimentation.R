@@ -183,7 +183,7 @@ for (i in 1:ncol(batch_scaled)){
 
 
 #Inspect results --------------------------------------------------
-filename <- file.choose()
+filename <- "3_ClusterResults.RDS"
 results <- readRDS(filename)
 batch <- batch_scaled #Select which batch to analyse
 
@@ -257,25 +257,27 @@ adj <- matrix(0,173,173)
 rownames(adj) <- unique(data$SPI_countrycode)
 colnames(adj) <- unique(data$SPI_countrycode)
 
-for (i in 1:ncol(matrices[[1]])){
+for (i in 4:ncol(matrices[[1]])){
   adj <- adj + make_adj(matrices[[1]][,i])
 }
 library(qgraph)
 # visualize averaged clustering
-groups <- matrices[[1]][,8]   # cluster assignments for each node
-
+par(mfrow=c(2,4))
+for (i in 4:10){
+groups <- matrices[[1]][,i]   # cluster assignments for each node
 # Define a color palette with 11 distinct colors
-palette11 <- rainbow(11)   # you can also try RColorBrewer for nicer palettes
+palette11 <- rainbow(length(unique(groups)))   # you can also try RColorBrewer for nicer palettes
 node_colors <- node_colors <- palette11[groups]
 qgraph(adj, layout = "spring", threshold = 0, color=node_colors, 
-       vsize=2.9,label.cex=1.2,repulsion=0.80, minimum=4)  # 'cut' removes weak edges
-legend("topleft",                       # position
-       legend = paste("Cluster", 1:11), # labels
-       col = palette11, 
-       pch = 19,                        # solid circle
-       pt.cex = 1.5, 
-       bty = "n")                       # no box
-
+       vsize=5,label.cex=1.2,repulsion=0.80, minimum=1,
+       title=colnames(batch_scaled)[i], title.cex=1.5)  # 'cut' removes weak edges
+# legend("topleft",                       # position
+#        legend = paste("Cluster", 1:length(unique(groups))), # labels
+#        col = palette11, 
+#        pch = 19,                        # solid circle
+#        pt.cex = 1.5, 
+#        bty = "n")                       # no box
+}
 
 test<-lm(apply(matrices[[2]],2,sd)~fmis$fmis+colSums(batch_scaled))
 summary(test)
@@ -302,8 +304,8 @@ colnames(clusterings)[2:(ncol(batch)+1)] <- colnames(batch)
 world <- left_join(world, clusterings, 
                    by = "SPI_countrycode")
 
-cluster_names <- 1:8
-cluster_colors <- setNames(scales::hue_pal()(9), cluster_names)
+cluster_names <- 1:11
+cluster_colors <- setNames(scales::hue_pal()(11), cluster_names)
 library(patchwork)
 p <- list()
 for (i in 1:ncol(batch)){
