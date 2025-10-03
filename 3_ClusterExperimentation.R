@@ -257,20 +257,20 @@ adj <- matrix(0,173,173)
 rownames(adj) <- unique(data$SPI_countrycode)
 colnames(adj) <- unique(data$SPI_countrycode)
 
-for (i in 4:ncol(matrices[[1]])){
+for (i in 1:ncol(matrices[[1]])){
   adj <- adj + make_adj(matrices[[1]][,i])
 }
 library(qgraph)
 # visualize averaged clustering
-par(mfrow=c(2,4))
-for (i in 4:10){
+par(mfrow=c(2,5))
+for (i in 1:10){
 groups <- matrices[[1]][,i]   # cluster assignments for each node
 # Define a color palette with 11 distinct colors
 palette11 <- rainbow(length(unique(groups)))   # you can also try RColorBrewer for nicer palettes
 node_colors <- node_colors <- palette11[groups]
-qgraph(adj, layout = "spring", threshold = 0, color=node_colors, 
-       vsize=5,label.cex=1.2,repulsion=0.80, minimum=1,
-       title=colnames(batch_scaled)[i], title.cex=1.5)  # 'cut' removes weak edges
+qgraph(adj, layout = "spring", threshold = 3, color=node_colors, 
+       vsize=5,label.cex=1.2,repulsion=0.80, minimum=3,
+       title=names[i], title.cex=1.5)  # 'cut' removes weak edges
 # legend("topleft",                       # position
 #        legend = paste("Cluster", 1:length(unique(groups))), # labels
 #        col = palette11, 
@@ -279,8 +279,21 @@ qgraph(adj, layout = "spring", threshold = 0, color=node_colors,
 #        bty = "n")                       # no box
 }
 
-test<-lm(apply(matrices[[2]],2,sd)~fmis$fmis+colSums(batch_scaled))
-summary(test)
+
+
+partitionQuality <- rep(0,10)
+for (partition in 1:10){
+  #Compute values for calculating dissimilarity
+  pc <- sapply(1:10,function(x){computePairCoefficients(matrices[[1]][,partition],matrices[[1]][,x])})
+  N10 <- sapply(1:10,function(x){pc[[x]]}@N10) #number of pairs in 1 but not in 2
+  N01 <- sapply(1:10,function(x){pc[[x]]}@N01) #number of pairs in 2 but not in 1
+  
+  #Compute Mirkin distance fpr "partition"
+  partitionQuality[partition] <- sum(N10+N01)
+}
+
+#Final Clustering
+bestClustering <- colnames(batch_scaled)[which.min(partitionQuality)]
 
 #Visualize the clusterings---------------------------------------
 #Load gis map
