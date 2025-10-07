@@ -25,8 +25,8 @@ batch_scaled <- Experiments%>%
            "BHN_FWB",
            "No_non_DLS",
            "No_nonDLS_limExt",
-           "Few indicators_SPI_preferred",
-           "Few indicators_SPI_preferred_90",
+           "Few_indicators_SPI_preferred",
+           "Few_indicators_SPI_preferred_90",
            "Few_indicators_closest_DLS_coverage",
            "Few_indicators_closest_DLS_coverage_90",
            "No_non_DLS_BHNFWB"
@@ -58,7 +58,8 @@ clusteredData <- data %>%
   rename(iso3 = SPI_countrycode)%>%
   left_join(clusters , by= c("Country","iso3"))%>%
   data.frame()%>%
-  mutate(cluster = as.factor(cluster))
+  mutate(cluster = as.factor(cluster))%>%
+  ungroup()
 
 table(clusters$cluster)
 
@@ -433,6 +434,30 @@ for (i in 1:nMax){
   
 }
 
+#SPI Dimension means ---------------------------------------------------------------
+dimmeans <- clusteredData%>%
+  mutate(BHN_mean = rowSums(across(5:22))/18,
+         FWB_mean = rowSums(across(23:37))/15,
+         OPP_mean = rowSums(across(38:56))/19)
+#Join clusters 
+#dimmeans <- left_join(dimmeans,clusters, by =c("Country","iso3"))
+
+dimmeans_long <- dimmeans %>%
+  pivot_longer(cols = c(BHN_mean, FWB_mean,OPP_mean), names_to = "variable", values_to = "value")
+
+ggplot(dimmeans_long, aes(x = SPI_year, y = value, group=Country,color=factor(cluster))) +
+  geom_line(alpha=1)+
+  facet_grid(cluster~variable,labeller = label_value) +
+  #theme_minimal() +
+  #scale_color_manual(values = cluster_colors)+
+  labs(title = "", x = "", y = "")+
+  guides(color="none")
+
+ggplot(dimmeans_long, aes(x = SPI_year, y = value, group=Country,color=factor(SPI_baseline))) +
+  geom_line(alpha=1)+
+  facet_grid(1~variable,labeller = label_value)
+
+
 #DLS performance measure--------------------------------------------------------
 #Idea to measure people brought out of material poverty during the study period
 
@@ -473,3 +498,76 @@ ggplot(DLSdata_summarized%>%
   geom_point()+
   scale_shape_manual(values = c(0:8))#+
   #facet_wrap(~which_min, scales="free_y")
+
+
+
+#Plot country medians -----------------------------------------------------------
+selected_vars <- rownames(batch_scaled)[batch_scaled[, clusterSelection] == 1]
+set <- clusteredData %>%
+  group_by(SPI_year, cluster,iso3) %>%
+  dplyr::select(c("SPI_year", "cluster","iso3",
+                  selected_vars))%>%
+  summarise(across(all_of(selected_vars),
+                   list(
+                     median = ~median(., na.rm = TRUE),
+                     q1 = ~quantile(., 0.25, na.rm = TRUE),
+                     q3 = ~quantile(., 0.75, na.rm = TRUE)
+                   ),
+                   .names = "{.col}_{.fn}"),
+            .groups = "drop")
+
+
+#Get names of variables
+variables <- selected_vars
+
+
+#Convert to long format for plotting
+long_median <- set %>%
+  select(1,2,3, ends_with("_median"))%>%
+  pivot_longer(cols = ends_with("_median"),
+               names_to = "Variable",
+               values_to = "Median",
+               names_pattern = "(.*)_median")
+long_q1 <- set %>%
+  select(1,2,3, ends_with("_q1"))%>%
+  pivot_longer(cols = ends_with("_q1"),
+               names_to = "Variable",
+               values_to = "Q1",
+               names_pattern = "(.*)_q1")
+long_q3 <- set %>%
+  select(1,2,3, ends_with("_q3"))%>%
+  pivot_longer(cols = ends_with("_q3"),
+               names_to = "Variable",
+               values_to = "Q3",
+               names_pattern = "(.*)_q3")
+# Combine all
+long_set <- long_median %>%
+  left_join(long_q1, by = c("SPI_year", "cluster", "Variable","iso3")) %>%
+  left_join(long_q3, by = c("SPI_year", "cluster", "Variable","iso3")) %>%
+  mutate(Variable = factor(Variable, levels = variables))
+
+#Filter
+long_set_filtered <- long_set%>%
+  #filter(cluster%in%c(4,8))
+filter(cluster%in%c(1,7,11))
+#filter(cluster%in%c(9,10))
+#filter(cluster%in%c(2,3,6))
+  #filter(cluster%in%c(1,2,3,4))
+  #filter(cluster%in%c(5,6,7))
+
+
+cluster_names <- 1:length(unique(clusters$cluster))
+cluster_colors <- setNames(scales::hue_pal()(length(unique(clusters$cluster))), cluster_names)
+ggplot(long_set_filtered, aes(x = SPI_year, y = Median, color = cluster, fill = cluster,group=iso3)) +
+  geom_ribbon(aes(ymin = Q1, ymax = Q3), alpha = 0.2, color = NA) +
+  geom_line(linewidth = 0.8,alpha=0.4) +
+  facet_wrap(~ Variable) +
+  theme_minimal() +
+  #scale_fill_manual(values = cluster_colors)+
+  #scale_color_manual(values = cluster_colors) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Year", y = "Country Median (with IQR)")+
+  theme(plot.title = element_text(size = 5))
+
+
+

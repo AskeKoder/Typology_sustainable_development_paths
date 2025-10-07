@@ -317,14 +317,14 @@ colnames(clusterings)[2:(ncol(batch)+1)] <- colnames(batch)
 world <- left_join(world, clusterings, 
                    by = "SPI_countrycode")
 
-cluster_names <- 1:11
-cluster_colors <- setNames(scales::hue_pal()(11), cluster_names)
+# cluster_names <- 1:11
+# cluster_colors <- setNames(scales::hue_pal()(11), cluster_names)
 library(patchwork)
 p <- list()
 for (i in 1:ncol(batch)){
   p[[i]] <- ggplot() +
     geom_sf(data = world, aes(fill = factor(!!sym(colnames(batch)[i]))), color = "white",size=0.5)+
-    labs(title = gsub("95","90",colnames(batch))[i])+ 
+    labs(title = names[i])+ 
     theme_bw() + 
     theme(panel.border = element_blank(),
           panel.grid.major = element_blank(),
@@ -332,11 +332,11 @@ for (i in 1:ncol(batch)){
           axis.line = element_blank(),
           axis.ticks = element_blank(),
           axis.title = element_blank())+
-    scale_fill_manual(values = cluster_colors)+
-   guides(fill=guide_legend(title="Cluster",ncol=1))
-    #guides(fill="none")
+    #scale_fill_manual(values = cluster_colors)+
+   #guides(fill=guide_legend(title="Cluster",ncol=1))
+    guides(fill="none")
 }
-(p[[1]]+p[[2]]+p[[3]]+p[[4]])/(p[[5]]+p[[6]]+p[[7]]+p[[8]])
+(p[[2]]+p[[3]]+p[[4]])/(p[[5]]+p[[6]]+p[[7]])/(p[[8]]+p[[9]]+p[[10]])
 p[[1]]+p[[2]]
 (p[[1]]+p[[2]])
 p[[3]]
