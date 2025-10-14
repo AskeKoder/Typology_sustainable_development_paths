@@ -59,7 +59,8 @@ clusteredData <- WBdata %>%
   rename(iso3 = SPI_countrycode)%>%
   left_join(clusters , by= c("Country","iso3"))%>%
   data.frame()%>%
-  mutate(Cluster = as.factor(cluster))
+  mutate(Cluster = as.factor(cluster))%>%
+  select(-cluster) 
 
 
 
@@ -162,7 +163,7 @@ data_full <- ENVdata %>%
   #Filter data
   filter(Year %in% 2000:2020)%>%
   filter(!is.na(Country))%>%
-  filter(!is.na(cluster))%>%
+  filter(!is.na(Cluster))%>%
   #filter(.imp == 1)%>% #One iteration of imputations are chosen
   # dplyr::select(c(Country,ISO_Country,Year,Population,Cluster,ExtCluster,
   #                 GHG,Scarce_Water_Consumption, Biodiversity_Impact,
@@ -175,7 +176,7 @@ data <- data_full%>%
 
 
 length(unique(data$Country))
-length(unique(data$cluster))
+length(unique(data$Cluster))
 data %>%
   group_by(Country) %>%
   summarise(n_obs = n())%>%
@@ -476,6 +477,193 @@ ggplot(test, aes(x = iso3)) +
     axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
     legend.position = "none"
   )
+
+
+#Fitting multivariable cluster model-------------------------------------------------
+vars <- c("Cluster","logGDPcap","logGHG","logBio","logWat")
+data_mvmodel <- data %>%
+  mutate(logGHG = scale(log(GHG)),
+         logBio = scale(log(Biodiversity_Impact)),
+         logWat = scale(log(Scarce_Water_Consumption)),
+         logGDPcap = scale(log(GDP_PPPcap)))
+  #filter(Cluster!=11)%>%
+  #na.omit()
+
+pairs(data_mvmodel[,vars],col=data_mvmodel$Cluster)
+print(psych::corTest(data_mvmodel[,c("logGHG","logBio","logWat")]),short=FALSE)
+
+MvModel <- lm(cbind(logGHG,
+                    logBio,
+                    logWat)~Cluster*log(GDP_PPPcap),
+                           data=data_mvmodel)
+summary(MvModel)
+car::Anova(MvModel, type="III")
+summary.aov(MvModel)
+
+pairwise(MvModel, "Cluster")
+#Visualize model
+
+# Basic HE plot
+heplots::heplot(MvModel,
+                variables=c("logGHG", "logBio"),
+                type = "III")
+
+# Add group mean ellipses
+heplots::heplot(MvModel, variables=c("logGHG", "logBio"), 
+                , terms = "Cluster",
+       fill = TRUE, fill.alpha = 0.1)
+
+pairs(MvModel)
+
+can <- candisc::candisc(MvModel, term = "Cluster", type="III",
+                        ellipse = TRUE,
+                        ellipse.fill = TRUE,          # fill the ellipses
+                        ellipse.fill.alpha = 1,     # transparency (0 = transparent, 1 = opaque)
+                        ellipse.line.lwd = 2,         # make ellipse lines thicker
+                        ellipse.line.lty = 1,         # solid lines
+                        #col = c("tomato", "steelblue", "forestgreen"), # group colors
+                        pch = 19,                     # filled points
+                        level = 0.95,
+                        )
+
+# Plot canonical dimensions
+plot(can)
+
+scores <- as.data.frame(can$scores)
+
+ggplot(scores, aes(x = Can1, y = Can2, fill = Cluster, color = Cluster)) +
+  stat_ellipse(type = "norm", level = 0.95, geom = "polygon", alpha = 0.5) +
+  geom_path(shape = 21, size = 3, color = "black",alpha=0.2,group=Country) +
+  theme_minimal(base_size = 14) +
+  # scale_fill_brewer(palette = "Set1") +
+  # scale_color_brewer(palette = "Set1") +
+  labs(title = "Canonical Discriminant Analysis (Species separation)",
+       x = "Canonical Dimension 1",
+       y = "Canonical Dimension 2")
+
+
+#Emmeans and Emtrends----------------------------------------------
+library(emmeans)
+library(lme4)
+
+#Fit individual models
+mod_logGHG <- lmer(logGHG ~ Cluster * logGDPcap + (logGDPcap|Country), data = data_mvmodel,REML = FALSE)
+mod_logBio <- lmer(logBio ~ Cluster * logGDPcap+ (logGDPcap|Country), data = data_mvmodel,REML = FALSE)
+mod_logWat <- lmer(logWat ~ Cluster * logGDPcap + (logGDPcap|Country), data = data_mvmodel,REML = FALSE)
+model_names <- c("mod_logGHG", "mod_logBio", "mod_logWat")
+
+summary(mod_logGHG)
+car::Anova(mod_logGHG,type="III")
+plot(ranef(mod_logGHG)$Country[,2])
+
+summary(mod_logBio)
+car::Anova(mod_logBio,type="III")
+
+summary(mod_logWat)
+car::Anova(mod_logWat,type="III")
+mod_logWat <- update(mod_logWat,~.-Cluster:logGDPcap)
+car::Anova(mod_logWat,type="III")
+mod_logWat <- update(mod_logWat,~.-logGDPcap)
+car::Anova(mod_logWat,type="III")
+
+#Refit significant models using REML for unbiased estimates
+mod_logGHG <- lmer(logGHG ~ Cluster * logGDPcap + (logGDPcap|Country), data = data_mvmodel,REML = TRUE)
+mod_logBio <- lmer(logBio ~ Cluster * logGDPcap+ (logGDPcap|Country), data = data_mvmodel,REML = TRUE)
+mod_logWat <- lmer(logWat ~ Cluster + (logGDPcap|Country), data = data_mvmodel,REML = TRUE)
+summary(mod_logGHG)
+
+# Initialize lists
+emmeans_results <- list()
+emtrends_results <- list()
+
+emmeans_df <- list()
+emtrends_df <- list()
+
+# Loop through models
+for (model_name in model_names) {
+  model_obj <- get(model_name)
+  
+  # Compute emmeans and emtrends
+  if (model_name!="mod_logWat"){
+    emmeans_res <- emmeans(model_obj, ~ Cluster, by="logGDPcap",pbkrtest.limit = 4000)
+  }else{
+    emmeans_res <- emmeans(model_obj, ~ Cluster,pbkrtest.limit = 4000)
+  }
+  # Store results
+  emmeans_results[[model_name]] <- emmeans_res
+  
+  
+  # Convert to data frames and add a model column
+  emmeans_df[[model_name]] <- as.data.frame(emmeans_res)
+  emmeans_df[[model_name]]$model <- model_name
+  
+  
+  if (model_name!="mod_logWat"){
+    emtrends_res <- emtrends(model_obj, ~ Cluster, var = "logGDPcap", by="Cluster",pbkrtest.limit = 4000)
+    emtrends_results[[model_name]] <- emtrends_res
+    emtrends_df[[model_name]] <- as.data.frame(emtrends_res)
+    emtrends_df[[model_name]]$model <- model_name
+  }
+  
+}
+
+# Combine all into single data frames
+emmeans_all <- do.call(rbind, emmeans_df)
+emtrends_all <- do.call(rbind, emtrends_df)
+
+emmeans_all$model= factor(emmeans_all$model, levels=model_names)
+emtrends_all$model= factor(emtrends_all$model, levels=model_names)
+
+#plots
+p1 <- ggplot(emmeans_all, aes(x = Cluster, y = emmean,color=Cluster)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2,lwd=0.7) +
+  theme_minimal() +
+  labs(title = "Estimated Marginal Means", y = "EM Mean (log-domain)", x = "") +
+  facet_wrap(~ model, scales = "free_y")+
+  guides(color="none")
+
+# emtrends plot faceted by model
+p2 <- ggplot(emtrends_all, aes(x = Cluster, y = logGDPcap.trend,color=Cluster)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.4,lwd=0.7) +
+  theme_minimal() +
+  labs(title = "", y = "d log(GHG) / d log(GDPcap)", x = "") +
+  facet_wrap(~ model, scales = "free_y")+
+  guides(color="none")
+
+# Combine with patchwork
+library(patchwork)
+(p1 / p2)
+p2
+
+
+#multilevel model with brms-------------------------
+library(MCMCglmm)
+data_mvmodel <- data_mvmodel%>%
+  na.omit()
+MvMlmodel <- MCMCglmm::MCMCglmm(cbind(logGHG, logBio,logWat)
+                                ~ trait:Cluster:logGDPcap + trait:Cluster+  trait:logGDPcap -1, 
+                                random = ~us(1+logGDPcap):Country,
+                                rcov = ~us(trait):units,
+                                data=data_mvmodel,
+                                family=rep("gaussian",3))
+summary(MvMlmodel)
+
+
+
+#Multilevel long format------------------------------------------------
+data_long <- data_mvmodel %>%
+  pivot_longer(cols = c(logGHG, logBio, logWat),
+               names_to = "variable",
+               values_to = "value")
+
+library(lme4)
+fit <- lmer(value~variable:(logGDPcap*Cluster) + (variable:logGDPcap|Country),
+     data=data_long)
+summary(fit)
+car::Anova(fit, type="III")
+
 
 #Compute index of change -----------------------------------------------
 index_of_change <- data_full %>%
