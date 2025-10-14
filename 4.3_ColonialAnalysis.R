@@ -59,7 +59,7 @@ df[df$iso3%in%col_never$Code,"colonizer"] <- "Not colonized" #Add the option to 
 
 #Load clusters
 clusterVariations <- readRDS("clustervariations_laglead_scaled.RDS")%>%
-  select(iso3=SPI_countrycode, cluster = Baseline)%>%
+  select(iso3=SPI_countrycode, cluster = 'Few indicators_SPI_preferred')%>%
   mutate(cluster= factor(cluster))
 
 
@@ -95,6 +95,23 @@ ggplot() +
   labs(title="Longest lasting colonizer")+
   guides(fill=guide_legend(title="Colonizer",ncol=1))
 
+#Fit ordinal model---------------------------------------------
+library(ordinal)
+df_model$cluster <- factor(df_model$cluster, levels=c(10,4,1,8,9,7,3,2,5,11,6))
+
+fitORD <- clm(cluster~colonizer*settmort,
+    data=df_model)
+summary(fitORD)
+car::Anova(fitORD,type="III")
+
+
+library(ggeffects)
+
+# Generate predictions
+preds <- ggpredict(fitORD, terms = c("settmort","colonizer"))
+
+# Plot predicted probabilities
+plot(preds)
 
 
 #Fit model------------------------------------------------------

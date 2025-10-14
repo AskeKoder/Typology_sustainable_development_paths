@@ -12,7 +12,7 @@ data <- read.csv("ImputedDataLag1Lead2_maxit30_scaled.csv")%>%
   relocate(.imp, .after=last_col())
 
 #Clusters from experiments
-clusterSelection <- "Baseline"
+clusterSelection <- 'Few indicators_SPI_preferred'
 clusters <- readRDS("clusterVariations_laglead_scaled.RDS")%>%
   select(Country,iso3 = SPI_countrycode,cluster = clusterSelection)
 
@@ -357,6 +357,37 @@ ggplot(long_set_filtered, aes(x = SPI_year, y = Median, color = cluster, fill = 
   labs(x = "Year", y = "Cluster Median (with IQR)")+
   theme(plot.title = element_text(size = 5))
 
+#With ranks:
+final_ranks <- long_set_filtered %>%
+  group_by(Variable) %>%
+  filter(SPI_year == max(SPI_year)) %>%          # keep only the last year per Variable
+  arrange(desc(Median)) %>%              # highest median = rank 1
+  mutate(rank = row_number()) %>%
+  ungroup()
+
+label_df <- final_ranks %>%
+  mutate(
+    label = paste0(cluster),           # e.g., "1. ClusterA"
+    x = max(long_set_filtered$SPI_year) + 0.5,         # slightly beyond last year
+    y = Median                                    # position based on final median
+  )
+
+ggplot(long_set_filtered, aes(x = SPI_year, y = Median, color = cluster, fill = cluster)) +
+  geom_ribbon(aes(ymin = Q1, ymax = Q3), alpha = 0.2, color = NA) +
+  geom_line(linewidth = 0.8) +
+  facet_wrap(~ Variable, scales = "free_y") +
+  theme_minimal() +
+  scale_fill_manual(values = cluster_colors) +
+  scale_color_manual(values = cluster_colors) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Year", y = "Cluster Median (with IQR)") +
+  geom_text(
+    data = label_df,
+    aes(x = x, y = y, label = label, color = cluster),
+    hjust = 0, size = 3, show.legend = FALSE
+  ) +
+  expand_limits(x = max(long_set_filtered$SPI_year) + 1) +  # add space for labels
+  theme(plot.title = element_text(size = 5))
 
 #Plot radarcharts -----------------------------------------------------------
 library(fmsb)
@@ -569,5 +600,26 @@ ggplot(long_set_filtered, aes(x = SPI_year, y = Median, color = cluster, fill = 
   labs(x = "Year", y = "Country Median (with IQR)")+
   theme(plot.title = element_text(size = 5))
 
+
+
+
+
+#Compare clusterings in sankey plot-----------------------------------------------
+AllClusters <- readRDS("clusterVariations_laglead_scaled.RDS")
+library(ggsankey)
+df_long <- AllClusters %>%
+  make_long(Baseline, 'Few indicators_SPI_preferred')
+
+ggplot(df_long, aes(x = x, 
+                    next_x = next_x, 
+                    node = node, 
+                    next_node = next_node, 
+                    fill = factor(node))) +
+  geom_sankey(flow.alpha = 0.6, node.color = "gray30") +
+  geom_sankey_label(aes(label = node),size = 3, color = "black") +
+  theme_sankey(base_size = 16) +
+  theme(legend.position = "none")+
+  labs(title = "",
+       x = "")
 
 
