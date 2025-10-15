@@ -473,9 +473,10 @@ ggplot(test, aes(x = iso3)) +
     sec.axis = sec_axis(~ . / scale_factor, name = "Yearly %-rate of change")
   ) +
   theme_minimal() +
-  labs(x = "Country") +
+  labs(x = "Country",
+       fill= "Cluster") +
   theme(
-    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
     #legend.position = "none"
   )+
   scale_fill_manual(values = cluster_colors)

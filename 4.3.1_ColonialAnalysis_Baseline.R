@@ -54,25 +54,86 @@ prienr1900 <- read.csv(paste0(folder,"prienr.csv"))%>%
 #Join data 
 df <- merge(setMort, col, by=c("iso3"), all=TRUE) %>%
   merge(prienr1900, by=c("iso3"), all=TRUE)%>%
-  select(iso3,colonizer, settmort, prienr1900)
+  select(iso3,colonizer, settmort, prienr1900)%>%
+  unique()
 df[df$iso3%in%col_never$Code,"colonizer"] <- "Not colonized" #Add the option to not have been colonized
 
 #Load clusters
-clusterVariations <- readRDS("clustervariations_laglead_scaled.RDS")%>%
-  select(iso3=SPI_countrycode, cluster = Baseline)%>%
+clusterVariations <- readRDS("clusterVariations_laglead_scaled.RDS")%>%
+  select(iso3=SPI_countrycode, cluster = 'Baseline')%>%
   mutate(cluster= factor(cluster))
 
-
-
-
-#Group colonizers with less than 5 observations
+#Group colonizers with less than 10 observations and append clusters to data
 df <- df %>%
   add_count(colonizer) %>%
   mutate(colonizer = if_else(n < 10, "Other", as.character(colonizer))) %>%
   select(-n)%>%
-  mutate(colonizer=factor(colonizer))
+  mutate(colonizer=factor(colonizer))%>%
+  merge(clusterVariations, by="iso3",all=TRUE)
 
-#Visualize colonizers
+
+#Load GDP data
+raw_GDP <- read.csv("Data_WellBeing/GDPpercap PPP 2001 international world bank.csv", header = FALSE, stringsAsFactors = FALSE)
+GDP <- raw_GDP[-c(1:3), ] #Remove metadata
+colnames(GDP) <- raw_GDP[3, ] #Set colnames
+
+
+GDP <- GDP %>%
+  tidyr::pivot_longer(
+    cols = matches("^\\d{4}$"),  # four numbers(\\d{4}) between ^start and $end of string 
+    names_to = "Year",
+    values_to = "GDP_PPP_current_international_dollars"
+  ) %>%
+  dplyr::select(
+    Country = `Country Name`,
+    ISO_Country = `Country Code`,
+    Year,
+    GDP_PPP_current_international_dollars)%>%
+  filter(Year == 2020)%>%
+  mutate(Country = as.factor(Country),
+         ISO_Country = as.factor(ISO_Country),
+         Year = as.numeric(Year))%>%
+  rename(GDP_PPP = GDP_PPP_current_international_dollars)
+
+summary(GDP)
+str(GDP)
+
+#Standardize names 
+library(countrycode)
+GDP$Country_std  <- countrycode(GDP$Country, origin="country.name",destination="country.name")
+GDP$iso3  <- countrycode(GDP$Country, origin="country.name",destination="iso3c")
+#Print where the renaming failed
+print(unique(GDP[is.na(GDP$Country_std), "Country"]),n=100)  #Only aggregated countries failed. No problem
+
+
+
+#Initial asssessment---------------------------------------------------------------------------
+df_dual <- df %>%
+  left_join(GDP,by="iso3")%>%
+  filter(!is.na(colonizer))%>%
+  filter(!is.na(cluster))%>%
+  filter(!is.na(settmort))%>%
+  group_by(cluster)%>%
+  mutate(across(c(GDP_PPP,settmort), mean, na.rm = TRUE))%>%
+  add_count()
+
+coeff <- 1.7
+ggplot(df_dual, aes(x = cluster)) +
+  geom_col(aes(y = settmort/n, fill = colonizer)) +
+  geom_text(aes(y = (settmort + 0.2), label=n))+
+  geom_line(aes(y = log(GDP_PPP)/coeff, group = 1, color = "log(GDP_PPP/cap)")) +
+  scale_y_continuous(
+    name = "log settler mortality",
+    sec.axis = sec_axis(~.*coeff, name = "log(GDP per capita) (2020)")
+  )+
+  scale_color_manual(
+    name = "",
+    values = c("log(GDP_PPP/cap)" = "black")
+  )+
+  theme_minimal()+
+  labs(title="")
+
+#Visualize clusters and colonizers
 world <- ne_countries(scale = "medium", returnclass = "sf",continent = c("south america","oceania","north america", "asia","europe","africa"))%>%
   mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'SDZ',"SDN"))%>%
   mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'PN1',"PNG"))%>%
@@ -83,7 +144,19 @@ colnames(world)[57] <- "iso3"
 #Append clusters to world data
 world <- left_join(world, df, 
                    by = "iso3")
-ggplot() +
+
+p1 <- ggplot() +
+  geom_sf(data = world, aes(fill = factor(cluster)), color = "white",size=0.5)+
+  theme_bw() + 
+  theme(panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank())+
+  labs(title="Longest lasting colonizer")+
+  guides(fill=guide_legend(title="Colonizer",ncol=1))
+p2 <- ggplot() +
   geom_sf(data = world, aes(fill = factor(colonizer)), color = "white",size=0.5)+
   theme_bw() + 
   theme(panel.border = element_blank(),
@@ -94,12 +167,12 @@ ggplot() +
         axis.title = element_blank())+
   labs(title="Longest lasting colonizer")+
   guides(fill=guide_legend(title="Colonizer",ncol=1))
-
+library(patchwork)
+p1/p2
 
 
 #Fit model------------------------------------------------------
 df_model <- df %>%
-  left_join(clusterVariations, by="iso3")%>%
   filter(colonizer!="Not colonized")%>%
   mutate(colonizer=factor(colonizer)) #Filter out countries that have not been colonized
 
@@ -118,6 +191,7 @@ car::Anova(fit,type=2)
 
 car::Anova(update(fit,~.+prienr1900),type=2)
 car::Anova(update(fit,~.+prienr1900+settmort),type=2)
+
 #Aggregate model------------------------------------------------------
 #Aggregate clusters not well represented in colonial data
 df_agg <- df_model %>%
@@ -152,9 +226,14 @@ p <- 2*(1-pnorm(abs(z),0,1))
 print(p)
 car::Anova(fit_agg,type=2) #Both are significant
 
+check <- df_agg%>%
+  na.omit()
 
+table(check$colonizer,check$cluster)
+car::Anova(update(fit_agg,~.+colonizer),type=2)
+fit_agg <- update(fit_agg,~.+colonizer)
 #Continuous graph
-preds <- data.frame(ggeffects::ggemmeans(fit_agg, terms=c("prienr1900")))
+preds <- data.frame(ggeffects::ggemmeans(fit_agg, terms=c("prienr1900","colonizer")))
 ggplot(preds, aes(x=x, y=predicted,color = response.level))+
   geom_line()+
   geom_ribbon(
@@ -165,10 +244,11 @@ ggplot(preds, aes(x=x, y=predicted,color = response.level))+
   labs(x="Primary school enrollment",
        y="Probability",
        fill="Colonizer")+
-  theme_minimal()
+  theme_minimal()+
+  facet_wrap(~group)
 
 
-preds <- data.frame(ggeffects::ggemmeans(fit_agg, terms=c("settmort")))
+preds <- data.frame(ggeffects::ggemmeans(fit_agg, terms=c("settmort","colonizer")))
 ggplot(preds, aes(x=x, y=predicted,color = response.level))+
   geom_line()+
   geom_ribbon(
@@ -180,7 +260,8 @@ ggplot(preds, aes(x=x, y=predicted,color = response.level))+
        y="Probability",
        fill="Cluster")+
   theme_minimal()+
-  guides(color="none")
+  guides(color="none")+
+  facet_wrap(~group)
 
 
 #Barchart for colonizer

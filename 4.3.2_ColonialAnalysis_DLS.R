@@ -59,7 +59,7 @@ df[df$iso3%in%col_never$Code,"colonizer"] <- "Not colonized" #Add the option to 
 
 #Load clusters
 clusterVariations <- readRDS("clustervariations_laglead_scaled.RDS")%>%
-  select(iso3=SPI_countrycode, cluster = 'Few_indicators_closest_DLS_coverage')%>%
+  select(iso3=SPI_countrycode, cluster = 'Few indicators_SPI_preferred')%>%
   mutate(cluster= factor(cluster))
 
 

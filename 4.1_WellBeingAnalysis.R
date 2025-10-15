@@ -12,7 +12,7 @@ data <- read.csv("ImputedDataLag1Lead2_maxit30_scaled.csv")%>%
   relocate(.imp, .after=last_col())
 
 #Clusters from experiments
-clusterSelection <- 'Few indicators_SPI_preferred'
+clusterSelection <- 'Baseline'
 clusters <- readRDS("clusterVariations_laglead_scaled.RDS")%>%
   select(Country,iso3 = SPI_countrycode,cluster = clusterSelection)
 

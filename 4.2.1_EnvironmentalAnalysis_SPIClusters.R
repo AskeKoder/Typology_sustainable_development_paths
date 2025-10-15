@@ -111,8 +111,22 @@ HDI$Country_std  <- countrycode(HDI$Country, origin="country.name",destination="
 HDI$iso3  <- countrycode(HDI$Country, origin="country.name",destination="iso3c")
 print(unique(HDI[is.na(HDI$Country_std), "Country"])) #Only aggrregates and micronesia,  which is not included in the clustering
 
-
-
+#Get TFP data
+TFP <- read.csv("Data_Environmental/WB_ASPD_WIDEF.csv")%>%
+  filter(INDICATOR =="WB_ASPD_DTFP")%>%
+  tidyr::pivot_longer(
+    cols = matches("X\\d{4}"),  # four numbers(\\d{4}) After X 
+    names_to = "Year",
+    values_to = "TFP"
+  )%>%
+  mutate(Year = as.numeric(gsub("X","",Year)))%>%
+  filter(Year %in% 2000:2020)%>%
+  select(Year,
+         Country = REF_AREA_LABEL,
+         iso3=REF_AREA,
+         TFP)%>%
+  mutate(Country = as.factor(Country),
+         iso3 = as.factor(iso3))
 
 #Environmental data
 ENVdata <- read_xlsx("Data_Environmental/GCSI_59a_Per_capita_2000-2020_05162025.xlsx") %>%
@@ -149,6 +163,7 @@ data_full <- ENVdata %>%
   left_join(clusteredData%>%rename(Year = SPI_year),by=c("Country","iso3","Year"))%>%
   left_join(HDI, by=c("Country","iso3","Year"))%>%
   left_join(GDP,by=c("Country","iso3","Year"))%>%
+  left_join(TFP,by=c("Country","iso3","Year"))%>%
   dplyr::select(!ends_with(c(".x",".y")))%>%
   #dplyr::select(!ISO_Country)%>%
   # rename(Country = Country_std,
@@ -637,6 +652,12 @@ library(patchwork)
 (p1 / p2)
 p2
 
+#Fit model to assess how much the clusters describe differences in GHG----------------
+fit<- lm(log(GHG)~log(GDP_PPP)+Cluster,
+   data=data)
+summary(fit)
+anova(fit)
+pairs(data[,c("Cluster","GHG","GDP_PPP")])
 
 #multilevel model with brms-------------------------
 library(MCMCglmm)
