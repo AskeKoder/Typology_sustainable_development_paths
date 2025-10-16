@@ -189,6 +189,9 @@ data_full <- ENVdata %>%
 data <- data_full%>%
   filter(.imp==1) #Select one imputed set, when these are not needed
 
+# data%>%
+#   select(Country, iso3, Year, GHG,Biodiversity_Impact,Scarce_Water_Consumption,GDP_PPPcap, Population,TFP )%>%
+#   write.csv("TFPdata.csv")
 
 length(unique(data$Country))
 length(unique(data$Cluster))

@@ -12,8 +12,8 @@ data <- read.csv("ImputedDataLag1Lead2_maxit30_scaled.csv")%>%
   relocate(.imp, .after=last_col())
 
 #Clusters from experiments
-clusterSelection <- 'Baseline'
-clusters <- readRDS("clusterVariations_laglead_scaled.RDS")%>%
+clusterSelection <- 'DLSFew_coverage'
+clusters <- readRDS("4_RankedClusters.RDS")%>%
   select(Country,iso3 = SPI_countrycode,cluster = clusterSelection)
 
 #Read experiment file
@@ -88,7 +88,7 @@ ggplot() +
           axis.ticks = element_blank(),
           axis.title = element_blank())+
     scale_fill_manual(values = cluster_colors)+
-    guides(fill=guide_legend(title="Cluster",ncol=2))
+    guides(fill=guide_legend(title="Cluster",ncol=1))
   #guides(fill="none")
 
 
@@ -215,7 +215,6 @@ for (i in 1:nrow(summary)){
 }
 
 
-
 #Compare clusters with HDI and GDP over time--------------------------------------------------
 #GDP (PPP) data
 raw_GDP <- read.csv("Data_WellBeing/GDPpercap PPP 2001 international world bank.csv", header = FALSE, stringsAsFactors = FALSE)
@@ -292,9 +291,14 @@ ggplot(HDI_clust,aes(x=log(GDP) ,y=HDI, color=factor(cluster), group=factor(Coun
 
 
 #Plot median of indicators over time -----------------------------------------------
-selected_vars <- rownames(batch_scaled)[batch_scaled[, clusterSelection] == 1]
+selected_vars <- rownames(batch_scaled)[batch_scaled[, 'Few_indicators_SPI_preferred'] == 1]
+#Get names of variables
+selected_vars[length(selected_vars)+1] <- "Share_not_in_slums"
+variables <- selected_vars
+
 set <- clusteredData %>%
   group_by(SPI_year, cluster) %>%
+  mutate(Share_not_in_slums = 100-Share_Slums)%>%
   dplyr::select(c("SPI_year", "cluster",
                   selected_vars))%>%
   summarise(across(all_of(selected_vars),
@@ -304,11 +308,11 @@ set <- clusteredData %>%
                      q3 = ~quantile(., 0.75, na.rm = TRUE)
                    ),
                    .names = "{.col}_{.fn}"),
-            .groups = "drop")
+            .groups = "drop")%>%
+  select(-starts_with("Share_Slums"))
   
 
-#Get names of variables
-variables <- selected_vars
+
 
 
 #Convert to long format for plotting
@@ -338,7 +342,7 @@ long_set <- long_median %>%
 
 #Filter
 long_set_filtered <- long_set%>%
-  filter(cluster%in%c(4,8))
+  filter(cluster%in%c(2,3,4))
   #filter(cluster%in%c(1,7,11))
   #filter(cluster%in%c(9,10))
   #filter(cluster%in%c(2,3,5,6))
@@ -351,8 +355,8 @@ ggplot(long_set_filtered, aes(x = SPI_year, y = Median, color = cluster, fill = 
   geom_line(linewidth = 0.8) +
   facet_wrap(~ Variable) +
   theme_minimal() +
-  scale_fill_manual(values = cluster_colors)+
-  scale_color_manual(values = cluster_colors) +
+  #scale_fill_manual(values = cluster_colors)+
+  #scale_color_manual(values = cluster_colors) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
   labs(x = "Year", y = "Cluster Median (with IQR)")+
   theme(plot.title = element_text(size = 5))
@@ -580,7 +584,7 @@ long_set <- long_median %>%
 #Filter
 long_set_filtered <- long_set%>%
   #filter(cluster%in%c(4,8))
-filter(cluster%in%c(1,7,11))
+filter(cluster%in%c(5,6))
 #filter(cluster%in%c(9,10))
 #filter(cluster%in%c(2,3,6))
   #filter(cluster%in%c(1,2,3,4))
@@ -605,10 +609,10 @@ ggplot(long_set_filtered, aes(x = SPI_year, y = Median, color = cluster, fill = 
 
 
 #Compare clusterings in sankey plot-----------------------------------------------
-AllClusters <- readRDS("clusterVariations_laglead_scaled.RDS")
+AllClusters <- readRDS("4_RankedClusters.RDS")
 library(ggsankey)
 df_long <- AllClusters %>%
-  make_long(Baseline, 'Few indicators_SPI_preferred')
+  make_long(Baseline, 'DLSFew_coverage')
 
 ggplot(df_long, aes(x = x, 
                     next_x = next_x, 
