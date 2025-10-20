@@ -16,7 +16,100 @@ clusters <-readRDS("4_RankedClusters.RDS")%>%
 #Combine
 df <- merge(data,clusters, by=c("iso3","Country"))%>%
   mutate(Cluster = factor(Cluster),
-         iso3 = factor(iso3))
+         iso3 = factor(iso3))%>%
+  select(Cluster,
+         country=iso3,
+         year=Year,
+         lnTFP=TFP, #Check this
+         lnEF = GHG, #temporary
+         lnGDP = GDP_PPPcap)%>%
+  mutate(lnEF = log(lnEF),
+         lnGDP = log(lnGDP))
+# df must contain: Cluster, country, year, lnTFP, lnGDP, lnEF
+
+# =========================================================
+# 0.1) Test for Unit roots
+# =========================================================
+testUnitRoot <- function(dg,exo="trend"){
+  pdata<- pdata.frame(dg %>% arrange(country, year), index = c("country","year"))
+  vars  <- c("lnEF", "lnGDP", "lnTFP")
+  
+  ips_test_results <- sapply(vars, function(v) {
+    #Set up data for test
+    y <- data.frame(split(pdata[,v], pdata$country))%>%
+      # Remove rows that are all NA
+      filter(if_any(everything(), ~ !is.na(.))) %>%
+      # Remove columns that are all NA
+      select(where(~ !all(is.na(.))))
+    
+    tryCatch({
+      test <-  purtest(y,
+                       #index = c("country","year"),
+                       test = "ips",
+                       pmax = 4, exo = exo,
+                       lags="AIC")},
+      error=function(e){cat("ERROR:",conditionMessage(e),"\n")})
+    summary(test)$statistic$p.value[1]  # extract p-value
+  })
+  
+  levinlin_test_results <- sapply(vars, function(v) {
+    #Set up data for test
+    y <- data.frame(split(pdata[,v], pdata$country))%>%
+      # Remove rows that are all NA
+      filter(if_any(everything(), ~ !is.na(.))) %>%
+      # Remove columns that are all NA
+      select(where(~ !all(is.na(.))))
+    tryCatch({
+    test <-  purtest(y,
+                     #index = c("country","year"),
+                     test = "levinlin",
+                     pmax = 4, exo = exo,
+                     lags="AIC")},
+    error=function(e){cat("ERROR:",conditionMessage(e),"\n")})
+    summary(test)$statistic$p.value[1]  # extract p-value
+  })
+  
+  madwu_test_results <- sapply(vars, function(v) {
+    #Set up data for test
+    y <- data.frame(split(pdata[,v], pdata$country))%>%
+      # Remove rows that are all NA
+      filter(if_any(everything(), ~ !is.na(.))) %>%
+      # Remove columns that are all NA
+      select(where(~ !all(is.na(.))))
+    
+    tryCatch({
+      test <-  purtest(y,
+                       #index = c("country","year"),
+                       test = "madwu",
+                       pmax = 4, exo = exo,
+                       lags="AIC")},
+      error=function(e){cat("ERROR:",conditionMessage(e),"\n")})
+    summary(test)$statistic$p.value[1]  # extract p-value
+  })
+  
+  round(data.frame("IPS" = ips_test_results,
+             "levinlin" = levinlin_test_results,
+             "madwu" = madwu_test_results),5)
+}
+for (g in sort(unique(df$Cluster))){
+  dg <- df %>% filter(Cluster == g)
+  print(paste("Cluster", g,":"))
+  print(testUnitRoot(dg))
+}
+for (g in sort(unique(df$Cluster))){
+  dg <- df %>% filter(Cluster == g)%>%
+    group_by(country) %>%
+    arrange(year, .by_group = TRUE) %>%
+    mutate(
+      across(
+        c(lnEF, lnGDP, lnTFP),
+        ~ . - dplyr::lag(.)
+      )
+    ) %>%
+    ungroup()
+  print(paste("Cluster", g,"differenced:"))
+  print(testUnitRoot(dg))
+}
 
 # =========================================================
 # 1) Long-run (Panel DOLS ≈ FMOLS) and ECT construction
@@ -43,7 +136,8 @@ estimate_longrun_cluster <- function(dg, leads_lags = 1, time_fe = TRUE) {
   
   fit <- plm(form, data = pdata,
              model = "within",
-             effect = if (time_fe) "twoways" else "individual")
+             #effect = if (time_fe) "twoways" else "individual",
+             within=TRUE)
   
   # Robust SEs
   summ <- coeftest(fit, vcov = vcovHC(fit, method="arellano", type="HC1", cluster="group"))
