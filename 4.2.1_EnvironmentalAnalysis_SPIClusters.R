@@ -81,7 +81,7 @@ GDP <- GDP %>%
     ISO_Country = `Country Code`,
     Year,
     GDP_PPP_current_international_dollars)%>%
-  filter(Year %in% 2000:2020)%>%
+  #filter(Year %in% 2000:2020)%>%
   mutate(Country = as.factor(Country),
          ISO_Country = as.factor(ISO_Country),
          Year = as.numeric(Year))%>%
@@ -102,8 +102,8 @@ HDI <- read.csv("Data_WellBeing/human-development-index.csv", header = TRUE, str
          ISO_Country = Code,
          HDI = Human.Development.Index)%>%
   mutate(Country = as.factor(Country),
-         ISO_Country = as.factor(ISO_Country))%>%
-  filter(Year %in% 2000:2020)
+         ISO_Country = as.factor(ISO_Country))#%>%
+  #filter(Year %in% 2000:2020)
 
 summary(HDI)
 str(HDI)
@@ -120,7 +120,7 @@ TFP <- read.csv("Data_Environmental/WB_ASPD_WIDEF.csv")%>%
     values_to = "TFP"
   )%>%
   mutate(Year = as.numeric(gsub("X","",Year)))%>%
-  filter(Year %in% 2000:2020)%>%
+  #filter(Year %in% 2000:2020)%>%
   select(Year,
          Country = REF_AREA_LABEL,
          iso3=REF_AREA,
@@ -190,7 +190,7 @@ data <- data_full%>%
   filter(.imp==1) #Select one imputed set, when these are not needed
 
 # data%>%
-#   select(Country, iso3, Year, GHG,Biodiversity_Impact,Scarce_Water_Consumption,GDP_PPPcap, Population,TFP )%>%
+#   select(Country, iso3, Year, GHG,Biodiversity_Impact,Scarce_Water_Consumption,GDP_PPPcap, Population,TFP,HDI )%>%
 #   write.csv("TFPdata.csv")
 
 length(unique(data$Country))
