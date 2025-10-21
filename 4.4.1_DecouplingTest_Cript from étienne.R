@@ -21,11 +21,38 @@ df <- merge(data,clusters, by=c("iso3","Country"))%>%
          country=iso3,
          year=Year,
          lnTFP=TFP, #Check this
-         lnEF = GHG, #temporary
-         lnGDP = GDP_PPPcap)%>%
-  mutate(lnEF = log(lnEF),
-         lnGDP = log(lnGDP))
+         EF = GHG, #temporary
+         GDP = GDP_PPPcap)%>%
+  mutate(lnEF = log(EF),
+         lnGDP = log(GDP))
 # df must contain: Cluster, country, year, lnTFP, lnGDP, lnEF
+
+
+# =========================================================
+#Compute EF
+# =========================================================
+#World average citizen in 2020
+# world_citizen <- df%>%
+#   filter(year == 2020)%>%
+#   summarise(across(c(GHG, Biodiversity_Impact, Scarce_Water_Consumption), ~ weighted.mean(., w = Population)))
+# 
+# #Normalize by world average citizen
+# df<- df %>%
+#   mutate(
+#     nGHG = GHG/world_citizen$GHG,
+#     nBiodiversity_Impact = Biodiversity_Impact / world_citizen$Biodiversity_Impact,
+#     nScarce_Water_Consumption = Scarce_Water_Consumption / world_citizen$Scarce_Water_Consumption,
+#     pers.eq.max = pmax(nGHG, nBiodiversity_Impact, nScarce_Water_Consumption),
+#     pers.eq.min = pmin(nGHG, nBiodiversity_Impact, nScarce_Water_Consumption),
+#     pers.eq.avg = rowMeans(select(.,c("nGHG", "nBiodiversity_Impact", "nScarce_Water_Consumption")))
+#   )
+# 
+# df$iso3 <- factor(df$iso3, levels = unique(df$iso3[order(df$Cluster, -df$pers.eq.min)]))
+# 
+# ggplot(df%>%filter(year==2020), aes(x=iso3, y=pers.eq.min, fill=factor(Cluster)))+
+#   geom_col()
+
+
 
 # =========================================================
 # 0.1) Test for Unit roots
@@ -34,7 +61,9 @@ testUnitRoot <- function(dg,exo="trend"){
   pdata<- pdata.frame(dg %>% arrange(country, year), index = c("country","year"))
   vars  <- c("lnEF", "lnGDP", "lnTFP")
   
+  
   ips_test_results <- sapply(vars, function(v) {
+    test <- FALSE
     #Set up data for test
     y <- data.frame(split(pdata[,v], pdata$country))%>%
       # Remove rows that are all NA
@@ -49,16 +78,21 @@ testUnitRoot <- function(dg,exo="trend"){
                        pmax = 4, exo = exo,
                        lags="AIC")},
       error=function(e){cat("ERROR:",conditionMessage(e),"\n")})
-    summary(test)$statistic$p.value[1]  # extract p-value
+    if (typeof(test) == "list"){
+      summary(test)$statistic$p.value[1]}# extract p-value
+    else{NA}   # extract p-value
   })
   
+  
   levinlin_test_results <- sapply(vars, function(v) {
+    test <- FALSE
     #Set up data for test
     y <- data.frame(split(pdata[,v], pdata$country))%>%
       # Remove rows that are all NA
       filter(if_any(everything(), ~ !is.na(.))) %>%
       # Remove columns that are all NA
       select(where(~ !all(is.na(.))))
+    
     tryCatch({
     test <-  purtest(y,
                      #index = c("country","year"),
@@ -66,10 +100,14 @@ testUnitRoot <- function(dg,exo="trend"){
                      pmax = 4, exo = exo,
                      lags="AIC")},
     error=function(e){cat("ERROR:",conditionMessage(e),"\n")})
-    summary(test)$statistic$p.value[1]  # extract p-value
+    if (typeof(test) == "list"){
+      summary(test)$statistic$p.value[1]}# extract p-value
+    else{NA} 
   })
   
+  
   madwu_test_results <- sapply(vars, function(v) {
+    test <- FALSE
     #Set up data for test
     y <- data.frame(split(pdata[,v], pdata$country))%>%
       # Remove rows that are all NA
@@ -84,7 +122,9 @@ testUnitRoot <- function(dg,exo="trend"){
                        pmax = 4, exo = exo,
                        lags="AIC")},
       error=function(e){cat("ERROR:",conditionMessage(e),"\n")})
-    summary(test)$statistic$p.value[1]  # extract p-value
+    if (typeof(test) == "list"){
+      summary(test)$statistic$p.value[1]}# extract p-value
+    else{NA}   # extract p-value
   })
   
   round(data.frame("IPS" = ips_test_results,
@@ -110,6 +150,12 @@ for (g in sort(unique(df$Cluster))){
   print(paste("Cluster", g,"differenced:"))
   print(testUnitRoot(dg))
 }
+
+#Evidence is pointing towards stationarity let's look at it
+ctry <- unique(df$country)[65]
+ggplot()+
+  geom_line(data=df%>%filter(country==ctry), aes(x=year, y=lnGDP,col="lnGDP"))+
+  geom_line(data=df%>%filter(country==ctry), aes(x=year, y=lnEF, col="lnEF"))
 
 # =========================================================
 # 1) Long-run (Panel DOLS ≈ FMOLS) and ECT construction

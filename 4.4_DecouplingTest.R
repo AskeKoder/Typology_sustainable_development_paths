@@ -1,4 +1,5 @@
 library(dplyr)
+
 #Read data
 data <- read.csv("TFPdata.csv")%>%
   select(-X)
@@ -12,6 +13,30 @@ df <- merge(data,clusters, by=c("iso3","Country"))%>%
          iso3 = factor(iso3))
 
 table(df$Cluster)/21
+
+
+#Compute EF-------------------------------------
+#World average citizen in 2020
+world_citizen <- df%>%
+  filter(Year == 2020)%>%
+  summarise(across(c(GHG, Biodiversity_Impact, Scarce_Water_Consumption), ~ weighted.mean(., w = Population)))
+
+#Normalize by world average citizen
+df<- df %>%
+  mutate(
+    nGHG = GHG/world_citizen$GHG,
+    nBiodiversity_Impact = Biodiversity_Impact / world_citizen$Biodiversity_Impact,
+    nScarce_Water_Consumption = Scarce_Water_Consumption / world_citizen$Scarce_Water_Consumption,
+    pers.eq.max = pmax(nGHG, nBiodiversity_Impact, nScarce_Water_Consumption),
+    pers.eq.min = pmin(nGHG, nBiodiversity_Impact, nScarce_Water_Consumption),
+    pers.eq.avg = rowMeans(select(.,c("nGHG", "nBiodiversity_Impact", "nScarce_Water_Consumption")))
+  )
+
+df$iso3 <- factor(df$iso3, levels = unique(df$iso3[order(df$Cluster, -df$pers.eq.min)]))
+
+ggplot(df%>%filter(Year==2020), aes(x=iso3, y=pers.eq.min, fill=factor(Cluster)))+
+  geom_col()
+
 
 #Fit models ------------------------------------
 fitALL <- lm(cbind(log(GHG),
@@ -138,14 +163,14 @@ emmeansList <- list()
 #emmeansList[[1]] <- emmeans(lme.GHG, ~ Cluster)
 
 # Simple slopes for A, B, C, F within each Group
-model <- lme.GHG.rs2
+model <- fit.HDI
 emmeansList[[1]] <-emtrends(model, ~ Cluster, var = "Year")%>%data.frame()
 emmeansList[[2]] <-emtrends(model, ~ Cluster, var = "TFP")%>%data.frame()
 emmeansList[[3]] <-emtrends(model, ~ Cluster, var = "log(GDP_PPPcap)")%>%data.frame()
 emmeansList[[4]] <-emtrends(model, ~ Cluster, var = "log(Population)")%>%data.frame()
 
 p <- list()
-for ( i in 1:4){
+for ( i in 2:3){
   p[[i]] <- ggplot(emmeansList[[i]], aes(x=Cluster, y = !!sym(colnames(emmeansList[[i]])[2])))+
     geom_point(aes(color=factor(Cluster)))+
     geom_errorbar(aes(ymin=lower.CL, ymax=upper.CL))+
@@ -154,7 +179,7 @@ for ( i in 1:4){
 library(patchwork)
 (p[[1]]+p[[2]])/(p[[3]] + p[[4]]) +  plot_layout(guides = "collect")
 
-
+p[[2]]+p[[3]]
 
 
 #Following the approach from the energy article---------------------------------------------------
@@ -191,4 +216,14 @@ for (i in 1:11){
 
 
 
+#Fit
+fit.GHG <- lme4::lmer(log(GHG)~Cluster*(log(GDP_PPPcap)+TFP)+(scale(Year)|iso3),
+                  data=df)
+summary(fit)
+
+fit.HDI <- lme4::lmer(HDI~Cluster*(log(GDP_PPPcap)+TFP)+(scale(Year)|iso3),
+                      data=df)
+summary(fit)
+
+emmeans::emtrends(fit, )
 #FMOLS

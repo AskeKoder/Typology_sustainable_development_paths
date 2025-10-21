@@ -112,21 +112,40 @@ HDI$iso3  <- countrycode(HDI$Country, origin="country.name",destination="iso3c")
 print(unique(HDI[is.na(HDI$Country_std), "Country"])) #Only aggrregates and micronesia,  which is not included in the clustering
 
 #Get TFP data
-TFP <- read.csv("Data_Environmental/WB_ASPD_WIDEF.csv")%>%
-  filter(INDICATOR =="WB_ASPD_DTFP")%>%
-  tidyr::pivot_longer(
-    cols = matches("X\\d{4}"),  # four numbers(\\d{4}) After X 
-    names_to = "Year",
-    values_to = "TFP"
-  )%>%
-  mutate(Year = as.numeric(gsub("X","",Year)))%>%
-  #filter(Year %in% 2000:2020)%>%
-  select(Year,
-         Country = REF_AREA_LABEL,
-         iso3=REF_AREA,
-         TFP)%>%
-  mutate(Country = as.factor(Country),
-         iso3 = as.factor(iso3))
+# TFP <- read.csv("Data_Environmental/WB_ASPD_WIDEF.csv")%>%
+#   filter(INDICATOR =="WB_ASPD_DTFP")%>%
+#   tidyr::pivot_longer(
+#     cols = matches("X\\d{4}"),  # four numbers(\\d{4}) After X 
+#     names_to = "Year",
+#     values_to = "TFP"
+#   )%>%
+#   mutate(Year = as.numeric(gsub("X","",Year)))%>%
+#   #filter(Year %in% 2000:2020)%>%
+#   select(Year,
+#          Country = REF_AREA_LABEL,
+#          iso3=REF_AREA,
+#          TFP)%>%
+#   mutate(Country = as.factor(Country),
+#          iso3 = as.factor(iso3))
+
+
+TFPindexUS <- read_xlsx("data_Environmental/pwt110.xlsx", sheet="Data")%>%
+  select(iso3 = countrycode,
+         Country= country,
+         Year = year,
+         TFPindex=ctfp) #TFP level at current PPPs (USA=1 all years)
+
+TFPUSindex2017 <- read.csv("data_Environmental/TFPUSindex2017.csv")%>%
+  mutate(Year = as.numeric(format(as.Date(observation_date), "%Y")))%>%
+  select(Year, TFPUS = RTFPNAUSA632NRUG) #US TFP data indexed for 2017
+
+TFP <- TFPindexUS %>%
+  left_join(TFPUSindex2017, by="Year")%>%
+  filter(Year %in% 2000:2020)%>%
+  mutate(TFP = TFPindex*TFPUS) #Complete TFP data indexed for US 2017
+
+unique(TFP%>%
+  na.omit()%>%select(iso3)) #120 countries remain
 
 #Environmental data
 ENVdata <- read_xlsx("Data_Environmental/GCSI_59a_Per_capita_2000-2020_05162025.xlsx") %>%
