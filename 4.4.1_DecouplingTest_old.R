@@ -11,34 +11,52 @@ data <- read.csv("TFPdata.csv")%>%
   select(-X)
 
 clusters <-readRDS("4_RankedClusters.RDS")%>%
-  select(Country,iso3=SPI_countrycode,Cluster = Baseline)
+  select(Country,iso3=SPI_countrycode,Cluster = DLSFew_coverage)
 
-##Combine
-#df <- merge(data,clusters, by=c("iso3","Country"))%>%
-#  mutate(Cluster = factor(Cluster),
-#         iso3 = factor(iso3))%>%
-#  select(Cluster,
-#         country=iso3,
-#         year=Year,
-#         lnTFP=TFP, #Check this
-#         lnEF = GHG, #temporary
-#         lnGDP = GDP_PPPcap)%>%
-#  mutate(lnEF = log(lnEF),
-#         lnGDP = log(lnGDP))
-## df must contain: Cluster, country, year, lnTFP, lnGDP, lnEF
+#Combine
+df <- merge(data,clusters, by=c("iso3","Country"))%>%
+  mutate(Cluster = factor(Cluster),
+         iso3 = factor(iso3))%>%
+  select(Cluster,
+         country=iso3,
+         year=Year,
+         lnTFP=TFP, #Check this
+         EF = GHG, #temporary
+         GDP = GDP_PPPcap)%>%
+  mutate(lnEF = log(EF),
+         lnGDP = log(GDP))
+# df must contain: Cluster, country, year, lnTFP, lnGDP, lnEF
 
-df <- merge(data, clusters, by = c("iso3", "Country")) %>%
-  dplyr::filter(TFP > 0, GHG > 0, GDP_PPPcap > 0) %>%  # remove zeros before log
-  dplyr::mutate(
-    Cluster = factor(Cluster),
-    iso3     = factor(iso3),
-    country  = iso3,
-    year     = Year,
-    lnTFP    = log(TFP),
-    lnEF     = log(GHG),
-    lnGDP    = log(GDP_PPPcap)
-  ) %>%
-  dplyr::select(Cluster, country, year, lnTFP, lnEF, lnGDP)
+
+# =========================================================
+#Compute EF
+# =========================================================
+#World average citizen in 2020
+world_citizen <- df%>%
+  filter(year == 2020)%>%
+  summarise(across(c(GHG, Biodiversity_Impact, Scarce_Water_Consumption), ~ weighted.mean(., w = Population)))
+
+#Normalize by world average citizen
+df<- df %>%
+  mutate(nGHG = GHG/world_citizen$GHG,
+         nBiodiversity_Impact = Biodiversity_Impact / world_citizen$Biodiversity_Impact,
+         nScarce_Water_Consumption = Scarce_Water_Consumption / world_citizen$Scarce_Water_Consumption)%>%
+  mutate(pers.eq.mean = rowMeans(select(.,c("nGHG", "nBiodiversity_Impact", "nScarce_Water_Consumption"))))%>%
+  mutate(pers.eq.gMean = (nGHG*nBiodiversity_Impact*nScarce_Water_Consumption)^(1/3))
+
+df$iso3 <- factor(df$iso3, levels = unique(df$iso3[order(df$Cluster, -df$pers.eq.mean)]))
+
+ggplot(df%>%filter(Year==2020), aes(x=iso3, y=pers.eq.gMean, fill=factor(Cluster)))+
+  geom_col()+
+  geom_line(data=df%>%filter(Year==2020), aes(x=as.numeric(iso3), y=pers.eq.mean))+
+  geom_point(data=df%>%filter(Year==2020), aes(x=iso3, y=nGHG,shape="GHG"),alpha=0.5)+
+  geom_point(data=df%>%filter(Year==2020), aes(x=iso3, y=nBiodiversity_Impact, ,shape="Bio"),alpha=0.5)+
+  geom_point(data=df%>%filter(Year==2020), aes(x=iso3, y=nScarce_Water_Consumption, ,shape="Water"),alpha=0.5)+
+  ylim(0,8)+
+  #geom_hline(yintercept=1)+
+  labs(y="Person equivalents")
+
+
 
 # =========================================================
 # 0.1) Test for Unit roots
@@ -47,7 +65,9 @@ testUnitRoot <- function(dg,exo="trend"){
   pdata<- pdata.frame(dg %>% arrange(country, year), index = c("country","year"))
   vars  <- c("lnEF", "lnGDP", "lnTFP")
   
+  
   ips_test_results <- sapply(vars, function(v) {
+    test <- FALSE
     #Set up data for test
     y <- data.frame(split(pdata[,v], pdata$country))%>%
       # Remove rows that are all NA
@@ -62,16 +82,21 @@ testUnitRoot <- function(dg,exo="trend"){
                        pmax = 4, exo = exo,
                        lags="AIC")},
       error=function(e){cat("ERROR:",conditionMessage(e),"\n")})
-    summary(test)$statistic$p.value[1]  # extract p-value
+    if (typeof(test) == "list"){
+      summary(test)$statistic$p.value[1]}# extract p-value
+    else{NA}   # extract p-value
   })
   
+  
   levinlin_test_results <- sapply(vars, function(v) {
+    test <- FALSE
     #Set up data for test
     y <- data.frame(split(pdata[,v], pdata$country))%>%
       # Remove rows that are all NA
       filter(if_any(everything(), ~ !is.na(.))) %>%
       # Remove columns that are all NA
       select(where(~ !all(is.na(.))))
+    
     tryCatch({
     test <-  purtest(y,
                      #index = c("country","year"),
@@ -79,10 +104,14 @@ testUnitRoot <- function(dg,exo="trend"){
                      pmax = 4, exo = exo,
                      lags="AIC")},
     error=function(e){cat("ERROR:",conditionMessage(e),"\n")})
-    summary(test)$statistic$p.value[1]  # extract p-value
+    if (typeof(test) == "list"){
+      summary(test)$statistic$p.value[1]}# extract p-value
+    else{NA} 
   })
   
+  
   madwu_test_results <- sapply(vars, function(v) {
+    test <- FALSE
     #Set up data for test
     y <- data.frame(split(pdata[,v], pdata$country))%>%
       # Remove rows that are all NA
@@ -97,20 +126,20 @@ testUnitRoot <- function(dg,exo="trend"){
                        pmax = 4, exo = exo,
                        lags="AIC")},
       error=function(e){cat("ERROR:",conditionMessage(e),"\n")})
-    summary(test)$statistic$p.value[1]  # extract p-value
+    if (typeof(test) == "list"){
+      summary(test)$statistic$p.value[1]}# extract p-value
+    else{NA}   # extract p-value
   })
   
   round(data.frame("IPS" = ips_test_results,
              "levinlin" = levinlin_test_results,
              "madwu" = madwu_test_results),5)
 }
-for (g in as.character(2:11)) {
+for (g in sort(unique(df$Cluster))){
   dg <- df %>% filter(Cluster == g)
-  cat(sprintf("Cluster %s:\n", g))
+  print(paste("Cluster", g,":"))
   print(testUnitRoot(dg))
 }
-
-
 for (g in sort(unique(df$Cluster))){
   dg <- df %>% filter(Cluster == g)%>%
     group_by(country) %>%
@@ -126,40 +155,11 @@ for (g in sort(unique(df$Cluster))){
   print(testUnitRoot(dg))
 }
 
-
-
-
-
-# 1) keep only Cluster 1 and basic hygiene
-cl1 <- df %>%
-  filter(Cluster == 1) %>%
-  select(country, year, lnEF, lnGDP, lnTFP) %>%
-  mutate(
-    country = as.factor(country),
-    year    = as.integer(year),
-    lnEF    = as.numeric(lnEF),
-    lnGDP   = as.numeric(lnGDP),
-    lnTFP   = as.numeric(lnTFP)
-  ) %>%
-  group_by(country, year) %>% slice(1) %>% ungroup()   # drop any duplicate (country,year) rows
-
-# 2) make panel object
-pdata1 <- pdata.frame(cl1, index = c("country","year"))
-
-# 3) run Levin–Lin–Chu (trend, AIC, pmax=4) for each variable
-llc_ef   <- purtest(lnEF  ~ 1, data = pdata1, test = "levinlin", exo = "trend", lags = "AIC", pmax = 4)
-llc_gdp  <- purtest(lnGDP ~ 1, data = pdata1, test = "levinlin", exo = "trend", lags = "AIC", pmax = 4)
-llc_tfp  <- purtest(lnTFP ~ 1, data = pdata1, test = "levinlin", exo = "trend", lags = "AIC", pmax = 4)
-
-# 4) show results
-print(summary(llc_ef))
-print(summary(llc_gdp))
-print(summary(llc_tfp))
-
-
-
-
-
+#Evidence is pointing towards stationarity let's look at it
+ctry <- unique(df$country)[65]
+ggplot()+
+  geom_line(data=df%>%filter(country==ctry), aes(x=year, y=lnGDP,col="lnGDP"))+
+  geom_line(data=df%>%filter(country==ctry), aes(x=year, y=lnEF, col="lnEF"))
 
 # =========================================================
 # 1) Long-run (Panel DOLS ≈ FMOLS) and ECT construction
