@@ -3,7 +3,6 @@ library(dplyr)
 library(plm)
 library(lmtest)
 library(sandwich)
-library(urca)
 
 # =========================================================
 # 0) Read data
@@ -14,7 +13,20 @@ data <- read.csv("TFPdata.csv")%>%
 clusters <-readRDS("4_RankedClusters.RDS")%>%
   select(Country,iso3=SPI_countrycode,Cluster = Baseline)
 
-#Combine
+##Combine
+#df <- merge(data,clusters, by=c("iso3","Country"))%>%
+#  mutate(Cluster = factor(Cluster),
+#         iso3 = factor(iso3))%>%
+#  select(Cluster,
+#         country=iso3,
+#         year=Year,
+#         lnTFP=TFP, #Check this
+#         lnEF = GHG, #temporary
+#         lnGDP = GDP_PPPcap)%>%
+#  mutate(lnEF = log(lnEF),
+#         lnGDP = log(lnGDP))
+## df must contain: Cluster, country, year, lnTFP, lnGDP, lnEF
+
 df <- merge(data, clusters, by = c("iso3", "Country")) %>%
   dplyr::filter(TFP > 0, GHG > 0, GDP_PPPcap > 0) %>%  # remove zeros before log
   dplyr::mutate(
@@ -92,35 +104,61 @@ testUnitRoot <- function(dg,exo="trend"){
              "levinlin" = levinlin_test_results,
              "madwu" = madwu_test_results),5)
 }
-for (g in sort(unique(df$Cluster))){
-  if (g == 8) next
+for (g in as.character(2:11)) {
   dg <- df %>% filter(Cluster == g)
-  if (g == 1) dg <- dg %>% filter(country != "USA")
-  print(paste("Cluster", g,":"))
+  cat(sprintf("Cluster %s:\n", g))
   print(testUnitRoot(dg))
 }
 
-# Potential selection: 2,3,4,5,7,11
-# Let's affine with Pedronii or KAO test
 
-
-# =========================================================
-#### Kao test
-# =========================================================
-
-for (g in c(2,3,4,5,7,11)) {
-  dg <- df %>% filter(Cluster == g)
-  if (g == 1) dg <- dg %>% filter(country != "USA")
-  
-  cat("\nCluster", g, "- manual Kao test (null: no cointegration)\n")
-  model_pool <- plm(lnEF ~ lnGDP + lnTFP, data = dg,
-                    index = c("country","year"), model = "pooling")
-  resid_panel <- residuals(model_pool)
-  test <- purtest(resid_panel, test = "levinlin", exo = "none", lags = 1)
-  print(summary(test))
+for (g in sort(unique(df$Cluster))){
+  dg <- df %>% filter(Cluster == g)%>%
+    group_by(country) %>%
+    arrange(year, .by_group = TRUE) %>%
+    mutate(
+      across(
+        c(lnEF, lnGDP, lnTFP),
+        ~ . - dplyr::lag(.)
+      )
+    ) %>%
+    ungroup()
+  print(paste("Cluster", g,"differenced:"))
+  print(testUnitRoot(dg))
 }
 
-# Final selection : 2,4,7,9
+
+
+
+
+# 1) keep only Cluster 1 and basic hygiene
+cl1 <- df %>%
+  filter(Cluster == 1) %>%
+  select(country, year, lnEF, lnGDP, lnTFP) %>%
+  mutate(
+    country = as.factor(country),
+    year    = as.integer(year),
+    lnEF    = as.numeric(lnEF),
+    lnGDP   = as.numeric(lnGDP),
+    lnTFP   = as.numeric(lnTFP)
+  ) %>%
+  group_by(country, year) %>% slice(1) %>% ungroup()   # drop any duplicate (country,year) rows
+
+# 2) make panel object
+pdata1 <- pdata.frame(cl1, index = c("country","year"))
+
+# 3) run Levin–Lin–Chu (trend, AIC, pmax=4) for each variable
+llc_ef   <- purtest(lnEF  ~ 1, data = pdata1, test = "levinlin", exo = "trend", lags = "AIC", pmax = 4)
+llc_gdp  <- purtest(lnGDP ~ 1, data = pdata1, test = "levinlin", exo = "trend", lags = "AIC", pmax = 4)
+llc_tfp  <- purtest(lnTFP ~ 1, data = pdata1, test = "levinlin", exo = "trend", lags = "AIC", pmax = 4)
+
+# 4) show results
+print(summary(llc_ef))
+print(summary(llc_gdp))
+print(summary(llc_tfp))
+
+
+
+
 
 
 # =========================================================
@@ -253,6 +291,6 @@ run_all_clusters <- function(df, leads_lags = 1, include_lags = TRUE, time_fe = 
 # 4) Run it
 # ======================================================
 # df must contain: Cluster, country, year, lnTFP, lnGDP, lnEF
-results <- run_all_clusters(df, leads_lags = 1, include_lags = TRUE, time_fe = TRUE)
-results$long_run
-results$short_run
+# results <- run_all_clusters(df, leads_lags = 1, include_lags = TRUE, time_fe = TRUE)
+# results$long_run
+# results$short_run
