@@ -232,12 +232,14 @@ names[8] <- "DLSFew_bestAlignment"
 names[9] <- "DLSFew_bestAlignment_90"
 names[10] <- "DLS_dim_only_BHN_FWB"
 
+order = c(1,2,3,4,10,5,6,7,8,9)
 df_plot <- left_join(df1,fmis, by="Exp")%>%
   left_join(df2,by="Exp")%>%
-  mutate(Exp=factor(Exp, levels=c(1,2,3,4,5,6,7,8,9)))
+  mutate(Exp=factor(Exp, levels=order))
+
 ggplot(df_plot, aes(x = Exp, y = Value)) +
   geom_boxplot(aes(color = "Intermediate Clusterings",fill=fmis), outliers=TRUE, outlier.alpha=0.5) +
-  geom_segment(aes(x = Exp-0.4,xend=Exp+0.4, y = optNum, yend=optNum, color = "Final clustering"),size=1) +
+  geom_segment(aes(x = as.numeric(Exp)-0.4,xend=as.numeric(Exp)+0.4, y = optNum, yend=optNum, color = "Final clustering"),size=1) +
   # Add second dataset, scaled to match first axis
   #geom_line(data = df3, aes(x = Exp, y = Value, color = "PCs used"),linetype=2,linewidth=1) +
   #geom_line(data = fmis, aes(x=Exp, y=fmis, color="% Missing values"),linetype=3,linewidth=1)+
@@ -250,28 +252,7 @@ ggplot(df_plot, aes(x = Exp, y = Value)) +
   theme_minimal()+
   theme(axis.text.x = element_text(angle=90,hjust=0.95),
         axis.text.y = element_text()) +
-  scale_x_discrete(labels=Exp)
-
-
-df_plot <- left_join(df1,fmis, by="Exp")%>%
-  left_join(df2,by="Exp")%>%
-  mutate(Exp=factor(Exp, levels=c(1,2,3,4,5,6,7,8,9)))
-ggplot(df_plot, aes(x = Exp, y = Value)) +
-  geom_boxplot(aes(color = "Intermediate Clusterings",fill=fmis), outliers=TRUE, outlier.alpha=0.5) +
-  geom_segment(aes(x = Exp-0.4,xend=Exp+0.4, y = optNum, yend=optNum, color = "Final clustering"),size=1) +
-  # Add second dataset, scaled to match first axis
-  #geom_line(data = df3, aes(x = Exp, y = Value, color = "PCs used"),linetype=2,linewidth=1) +
-  #geom_line(data = fmis, aes(x=Exp, y=fmis, color="% Missing values"),linetype=3,linewidth=1)+
-  scale_y_continuous(
-    name = "Number of clusters"
-  ) +
-  scale_fill_viridis_c(begin=0,end=1)+
-  scale_color_manual(values = c("Intermediate Clusterings" = "black", "Final clustering" = "red","% Missing values"="blue" ,"PCs used" = "green")) +
-  labs(x = "", title = "", color = "",fill="% missing values", y="Number of clusters") +
-  theme_minimal()+
-  theme(axis.text.x = element_text(angle=90,hjust=0.95),
-        axis.text.y = element_text()) +
-  scale_x_discrete(labels=names)
+  scale_x_discrete(labels=names[order])
 
 
 

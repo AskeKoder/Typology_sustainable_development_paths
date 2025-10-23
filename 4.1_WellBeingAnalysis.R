@@ -79,7 +79,7 @@ cluster_names <- 1:length(unique(clusters$cluster))
 cluster_colors <- setNames(scales::hue_pal()(length(unique(clusters$cluster))), cluster_names)
 ggplot() +
     geom_sf(data = world, aes(fill = factor(cluster)), color = "white",size=0.5)+
-    labs(title = "SPI Baseline")+ 
+    labs(title = clusterSelection)+ 
     theme_bw() + 
     theme(panel.border = element_blank(),
           panel.grid.major = element_blank(),

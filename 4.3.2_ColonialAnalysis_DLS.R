@@ -58,50 +58,85 @@ df <- merge(setMort, col, by=c("iso3"), all=TRUE) %>%
 df[df$iso3%in%col_never$Code,"colonizer"] <- "Not colonized" #Add the option to not have been colonized
 
 #Load clusters
-clusterVariations <- readRDS("clustervariations_laglead_scaled.RDS")%>%
-  select(iso3=SPI_countrycode, cluster = 'Few indicators_SPI_preferred')%>%
+clusterVariations <- readRDS("4_RankedClusters.RDS")%>%
+  select(iso3=SPI_countrycode, cluster = 'DLSFew_bestAlignment')%>%
   mutate(cluster= factor(cluster))
 
-
-
-
-#Group colonizers with less than 5 observations
+#Group colonizers with less than 10 observations
 df <- df %>%
   add_count(colonizer) %>%
   mutate(colonizer = if_else(n < 10, "Other", as.character(colonizer))) %>%
   select(-n)%>%
-  mutate(colonizer=factor(colonizer))
-
-#Visualize colonizers
-world <- ne_countries(scale = "medium", returnclass = "sf",continent = c("south america","oceania","north america", "asia","europe","africa"))%>%
-  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'SDZ',"SDN"))%>%
-  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'PN1',"PNG"))%>%
-  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'PR1',"PRT"))%>%
-  mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'SSD',"SSD*"))
-colnames(world)[57] <- "iso3"
-
-#Append clusters to world data
-world <- left_join(world, df, 
-                   by = "iso3")
-ggplot() +
-  geom_sf(data = world, aes(fill = factor(colonizer)), color = "white",size=0.5)+
-  theme_bw() + 
-  theme(panel.border = element_blank(),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        axis.line = element_blank(),
-        axis.ticks = element_blank(),
-        axis.title = element_blank())+
-  labs(title="Longest lasting colonizer")+
-  guides(fill=guide_legend(title="Colonizer",ncol=1))
+  mutate(colonizer=factor(colonizer))%>%
+  merge(clusterVariations, by="iso3",all=TRUE)
 
 
+
+#Load GDP data
+raw_GDP <- read.csv("Data_WellBeing/GDPpercap PPP 2001 international world bank.csv", header = FALSE, stringsAsFactors = FALSE)
+GDP <- raw_GDP[-c(1:3), ] #Remove metadata
+colnames(GDP) <- raw_GDP[3, ] #Set colnames
+
+
+GDP <- GDP %>%
+  tidyr::pivot_longer(
+    cols = matches("^\\d{4}$"),  # four numbers(\\d{4}) between ^start and $end of string 
+    names_to = "Year",
+    values_to = "GDP_PPP_current_international_dollars"
+  ) %>%
+  dplyr::select(
+    Country = `Country Name`,
+    ISO_Country = `Country Code`,
+    Year,
+    GDP_PPP_current_international_dollars)%>%
+  filter(Year == 2020)%>%
+  mutate(Country = as.factor(Country),
+         ISO_Country = as.factor(ISO_Country),
+         Year = as.numeric(Year))%>%
+  rename(GDP_PPP = GDP_PPP_current_international_dollars)
+
+summary(GDP)
+str(GDP)
+
+#Standardize names 
+library(countrycode)
+GDP$Country_std  <- countrycode(GDP$Country, origin="country.name",destination="country.name")
+GDP$iso3  <- countrycode(GDP$Country, origin="country.name",destination="iso3c")
+#Print where the renaming failed
+print(unique(GDP[is.na(GDP$Country_std), "Country"]),n=100)  #Only aggregated countries failed. No problem
+
+
+#Initial asssessment---------------------------------------------------------------------------
+df_dual <- df %>%
+  left_join(GDP,by="iso3")%>%
+  filter(!is.na(colonizer))%>%
+  filter(!is.na(cluster))%>%
+  filter(!is.na(settmort))%>%
+  group_by(cluster)%>%
+  mutate(across(c(GDP_PPP,settmort), mean, na.rm = TRUE))%>%
+  add_count()
+
+coeff <- 1.7
+ggplot(df_dual, aes(x = cluster)) +
+  geom_col(aes(y = settmort/n, fill = colonizer)) +
+  geom_text(aes(y = (settmort + 0.2), label=n))+
+  geom_line(aes(y = log(GDP_PPP)/coeff, group = 1, color = "log(GDP/cap)")) +
+  scale_y_continuous(
+    name = "log(settmort)",
+    sec.axis = sec_axis(~.*coeff, name = "log(GDP/cap)")
+  )+
+  scale_color_manual(
+    name = "",
+    values = c("log(GDP/cap)" = "black")
+  )+
+  theme_minimal()+
+  labs(title="", x="Cluster")
 
 #Fit model------------------------------------------------------
 df_model <- df %>%
-  left_join(clusterVariations, by="iso3")%>%
   filter(colonizer!="Not colonized")%>%
-  mutate(colonizer=factor(colonizer)) #Filter out countries that have not been colonized
+  mutate(colonizer=factor(colonizer))%>% #Filter out countries that have not been colonized
+  na.omit()
 
 #Overview
 table(df_model$cluster,df_model$colonizer)
@@ -130,7 +165,7 @@ car::Anova(fit2,type=2)
 
 
 fit3 <- multinom(cluster ~ colonizer+ settmort+prienr1900,
-                 data=df_model)
+                 data=df_model,maxit=500)
 summary(fit3)
 z <- summary(fit3)$coefficients/ summary(fit3)$standard.errors
 p <- 2*(1-pnorm(abs(z),0,1))
@@ -266,176 +301,176 @@ ggplot(preds, aes(x=x, y=predicted, color=response.level))+
 #   theme_minimal()+
 #   guides(color="none")
 
-
-#Barchart for colonizer
-preds <- data.frame(ggeffects::ggemmeans(fit_agg, terms="colonizer"))
-ggplot(preds, aes(x=x, y=predicted,fill = response.level))+
-  geom_col(position = position_dodge(width = 0.9)) +
-  geom_errorbar(
-    aes(ymin = conf.low, ymax = conf.high),
-    color = "black",
-    width = 0.2,
-    position = position_dodge(width = 0.9)
-  )+
-  labs(x="Colonizer",
-       y="Probability",
-       fill="Colonizer")+
-  theme_minimal()
-
-#Including settler mortality
-df_agg2 <- df_agg %>% 
-  filter(!is.na(settmort))
-
-fit_agg2 <- multinom(cluster~colonizer+settmort, data=df_agg2)
-summary(fit_agg2)
-
-z <- summary(fit_agg2)$coefficients/ summary(fit_agg2)$standard.errors
-p <- 2*(1-pnorm(abs(z),0,1))
-print(p)
-car::Anova(fit_agg2,type=2)  
-lmtest::lrtest(update(fit_agg2,~1),fit_agg2)
-
-
-preds <- data.frame(ggeffects::ggemmeans(fit_agg2, terms=~settmort+colonizer))
-ggplot(preds, aes(x=x, y=predicted, color=response.level))+
-  geom_line(show.legend = FALSE) +
-  geom_point(data=df_agg2%>%
-               select(response.level=cluster,
-                      group=colonizer,
-                      x=settmort)%>%
-               na.omit(),
-             aes(x=x,y=0, color=response.level),
-             shape=4,size=3, stroke = 1.5,alpha=0.7,
-             position = position_jitter(width = 0.1, height = 0))+
-  facet_wrap(~group)+
-  geom_ribbon(
-    aes(ymin = conf.low, ymax = conf.high, fill = response.level),
-    alpha = 0.2,
-    color = NA
-  )+
-  labs(x="log(Settler mortality)",
-       y="Probability",
-       fill="Cluster",
-       color="Observed clusters")+
-  theme_minimal()
-
-
-#Include primary school enrollment?
-fit_agg3 <- update(fit_agg2,~.+prienr1900,maxit=200)
-summary(fit_agg3)
-z <- summary(fit_agg3)$coefficients/ summary(fit_agg3)$standard.errors
-p <- 2*(1-pnorm(abs(z),0,1))
-print(p)
-car::Anova(fit_agg3,type=2) 
-
-preds <- data.frame(ggeffects::ggemmeans(fit_agg3, terms=~settmort+prienr1900+colonizer))
-lmtest::lrtest(fit_agg3,update(fit_agg2,data=df_agg2%>%filter(!is.na(prienr1900))))
-
-#Limt the analysis to clusters represented in africa 
-df_filtered <- df_model %>%
-  filter(cluster %in% c(1,2,6,7,8))%>%
-  mutate(cluster= factor(cluster),
-         colonizer= factor(colonizer))%>%
-  filter(!is.na(colonizer))
-  # filter(!is.na(settmort))
-
-fit_filtered <- multinom(cluster ~ colonizer,
-                data=df_filtered,
-                maxit=700)
-
-summary(fit_filtered)
-z <- summary(fit_filtered)$coefficients/ summary(fit_filtered)$standard.errors
-p <- 2*(1-pnorm(abs(z),0,1))
-print(p)
-car::Anova(fit_filtered,type=2)  
-
-fit_null <- multinom(cluster~1,
-                     data=df_filtered)
-lmtest::lrtest(fit_null,fit_filtered)
-
-preds <- data.frame(ggeffects::ggemmeans(fit_filtered, terms="colonizer"))
-
-ggplot(preds, aes(x=x, y=predicted,fill = response.level))+
-  geom_col(position = position_dodge(width = 0.9)) +
-  geom_errorbar(
-    aes(ymin = conf.low, ymax = conf.high),
-    color = "black",
-    width = 0.2,
-    position = position_dodge(width = 0.9)
-  )+
-  labs(x="Cluster",
-       y="Probability",
-       fill="Colonizer")+
-  theme_minimal()
-
-#Add settler mortality as a variable
-df_filtered2 <- df_model %>%
-  filter(cluster %in% c(1,2,6,7))%>%
-  mutate(cluster= factor(cluster),
-         colonizer= factor(colonizer))%>%
-  filter(!is.na(colonizer))%>%
-  filter(!is.na(settmort))
-
-fit_filtered2 <- multinom(cluster ~ colonizer+settmort,
-                         data=df_filtered2,
-                         maxit=700)
-
-summary(fit_filtered2)
-z <- summary(fit_filtered2)$coefficients/ summary(fit_filtered2)$standard.errors
-p <- 2*(1-pnorm(abs(z),0,1))
-print(p)
-car::Anova(fit_filtered2,type=2)  
-
-fit_null <- multinom(cluster~1,
-                     data=df_filtered2)
-lmtest::lrtest(fit_null,fit_filtered)
-
-
-
-#Add primary school enrollment as a variable
-df_filtered2 <- df_model %>%
-  filter(cluster %in% c(1,2,6,7))%>%
-  mutate(cluster= factor(cluster),
-         colonizer= factor(colonizer))%>%
-  filter(!is.na(colonizer))%>%
-  filter(!is.na(settmort))
-
-fit_filtered2 <- multinom(cluster ~ colonizer+settmort,
-                          data=df_filtered2,
-                          maxit=700)
-
-summary(fit_filtered2)
-z <- summary(fit_filtered2)$coefficients/ summary(fit_filtered2)$standard.errors
-p <- 2*(1-pnorm(abs(z),0,1))
-print(p)
-car::Anova(fit_filtered2,type=2)  
-
-fit_null <- multinom(cluster~1,
-                     data=df_filtered2)
-lmtest::lrtest(fit_null,fit_filtered)
-
-
-##Visualize model
-# Make prediction grid
-newdata <- expand.grid(
-  colonizer = levels(df_filtered2$colonizer),
-  settmort = seq(min(df_filtered2$settmort,na.rm=TRUE), max(df_filtered$settmort,na.rm=TRUE), length.out = 50)
-)
-
-# Get predicted probabilities
-preds <- predict(fit_filtered2, newdata = newdata, type = "probs")
-
-# Convert to long format
-pred_df <- cbind(newdata, preds) %>%
-  tidyr::pivot_longer(cols = -c(colonizer,settmort),
-                      names_to = "cluster", values_to = "probability")%>%
-  unique()
-
-# Plot
-ggplot(pred_df, aes(x = settmort, y = probability, color = cluster)) +
-  geom_line() +
-  geom_point(data=df_filtered2, aes(x=settmort, y=1, fill=factor(cluster)), color="black",pch=21, alpha=0.5,size=3)+
-  facet_wrap(~colonizer) +
-  theme_minimal() +
-  labs(title = "Predicted Probabilities by Colonizer, Settler mortality and school enrollment (1900)")
+# 
+# #Barchart for colonizer
+# preds <- data.frame(ggeffects::ggemmeans(fit_agg, terms="colonizer"))
+# ggplot(preds, aes(x=x, y=predicted,fill = response.level))+
+#   geom_col(position = position_dodge(width = 0.9)) +
+#   geom_errorbar(
+#     aes(ymin = conf.low, ymax = conf.high),
+#     color = "black",
+#     width = 0.2,
+#     position = position_dodge(width = 0.9)
+#   )+
+#   labs(x="Colonizer",
+#        y="Probability",
+#        fill="Colonizer")+
+#   theme_minimal()
+# 
+# #Including settler mortality
+# df_agg2 <- df_agg %>% 
+#   filter(!is.na(settmort))
+# 
+# fit_agg2 <- multinom(cluster~colonizer+settmort, data=df_agg2)
+# summary(fit_agg2)
+# 
+# z <- summary(fit_agg2)$coefficients/ summary(fit_agg2)$standard.errors
+# p <- 2*(1-pnorm(abs(z),0,1))
+# print(p)
+# car::Anova(fit_agg2,type=2)  
+# lmtest::lrtest(update(fit_agg2,~1),fit_agg2)
+# 
+# 
+# preds <- data.frame(ggeffects::ggemmeans(fit_agg2, terms=~settmort+colonizer))
+# ggplot(preds, aes(x=x, y=predicted, color=response.level))+
+#   geom_line(show.legend = FALSE) +
+#   geom_point(data=df_agg2%>%
+#                select(response.level=cluster,
+#                       group=colonizer,
+#                       x=settmort)%>%
+#                na.omit(),
+#              aes(x=x,y=0, color=response.level),
+#              shape=4,size=3, stroke = 1.5,alpha=0.7,
+#              position = position_jitter(width = 0.1, height = 0))+
+#   facet_wrap(~group)+
+#   geom_ribbon(
+#     aes(ymin = conf.low, ymax = conf.high, fill = response.level),
+#     alpha = 0.2,
+#     color = NA
+#   )+
+#   labs(x="log(Settler mortality)",
+#        y="Probability",
+#        fill="Cluster",
+#        color="Observed clusters")+
+#   theme_minimal()
+# 
+# 
+# #Include primary school enrollment?
+# fit_agg3 <- update(fit_agg2,~.+prienr1900,maxit=200)
+# summary(fit_agg3)
+# z <- summary(fit_agg3)$coefficients/ summary(fit_agg3)$standard.errors
+# p <- 2*(1-pnorm(abs(z),0,1))
+# print(p)
+# car::Anova(fit_agg3,type=2) 
+# 
+# preds <- data.frame(ggeffects::ggemmeans(fit_agg3, terms=~settmort+prienr1900+colonizer))
+# lmtest::lrtest(fit_agg3,update(fit_agg2,data=df_agg2%>%filter(!is.na(prienr1900))))
+# 
+# #Limt the analysis to clusters represented in africa 
+# df_filtered <- df_model %>%
+#   filter(cluster %in% c(1,2,6,7,8))%>%
+#   mutate(cluster= factor(cluster),
+#          colonizer= factor(colonizer))%>%
+#   filter(!is.na(colonizer))
+#   # filter(!is.na(settmort))
+# 
+# fit_filtered <- multinom(cluster ~ colonizer,
+#                 data=df_filtered,
+#                 maxit=700)
+# 
+# summary(fit_filtered)
+# z <- summary(fit_filtered)$coefficients/ summary(fit_filtered)$standard.errors
+# p <- 2*(1-pnorm(abs(z),0,1))
+# print(p)
+# car::Anova(fit_filtered,type=2)  
+# 
+# fit_null <- multinom(cluster~1,
+#                      data=df_filtered)
+# lmtest::lrtest(fit_null,fit_filtered)
+# 
+# preds <- data.frame(ggeffects::ggemmeans(fit_filtered, terms="colonizer"))
+# 
+# ggplot(preds, aes(x=x, y=predicted,fill = response.level))+
+#   geom_col(position = position_dodge(width = 0.9)) +
+#   geom_errorbar(
+#     aes(ymin = conf.low, ymax = conf.high),
+#     color = "black",
+#     width = 0.2,
+#     position = position_dodge(width = 0.9)
+#   )+
+#   labs(x="Cluster",
+#        y="Probability",
+#        fill="Colonizer")+
+#   theme_minimal()
+# 
+# #Add settler mortality as a variable
+# df_filtered2 <- df_model %>%
+#   filter(cluster %in% c(1,2,6,7))%>%
+#   mutate(cluster= factor(cluster),
+#          colonizer= factor(colonizer))%>%
+#   filter(!is.na(colonizer))%>%
+#   filter(!is.na(settmort))
+# 
+# fit_filtered2 <- multinom(cluster ~ colonizer+settmort,
+#                          data=df_filtered2,
+#                          maxit=700)
+# 
+# summary(fit_filtered2)
+# z <- summary(fit_filtered2)$coefficients/ summary(fit_filtered2)$standard.errors
+# p <- 2*(1-pnorm(abs(z),0,1))
+# print(p)
+# car::Anova(fit_filtered2,type=2)  
+# 
+# fit_null <- multinom(cluster~1,
+#                      data=df_filtered2)
+# lmtest::lrtest(fit_null,fit_filtered)
+# 
+# 
+# 
+# #Add primary school enrollment as a variable
+# df_filtered2 <- df_model %>%
+#   filter(cluster %in% c(1,2,6,7))%>%
+#   mutate(cluster= factor(cluster),
+#          colonizer= factor(colonizer))%>%
+#   filter(!is.na(colonizer))%>%
+#   filter(!is.na(settmort))
+# 
+# fit_filtered2 <- multinom(cluster ~ colonizer+settmort,
+#                           data=df_filtered2,
+#                           maxit=700)
+# 
+# summary(fit_filtered2)
+# z <- summary(fit_filtered2)$coefficients/ summary(fit_filtered2)$standard.errors
+# p <- 2*(1-pnorm(abs(z),0,1))
+# print(p)
+# car::Anova(fit_filtered2,type=2)  
+# 
+# fit_null <- multinom(cluster~1,
+#                      data=df_filtered2)
+# lmtest::lrtest(fit_null,fit_filtered)
+# 
+# 
+# ##Visualize model
+# # Make prediction grid
+# newdata <- expand.grid(
+#   colonizer = levels(df_filtered2$colonizer),
+#   settmort = seq(min(df_filtered2$settmort,na.rm=TRUE), max(df_filtered$settmort,na.rm=TRUE), length.out = 50)
+# )
+# 
+# # Get predicted probabilities
+# preds <- predict(fit_filtered2, newdata = newdata, type = "probs")
+# 
+# # Convert to long format
+# pred_df <- cbind(newdata, preds) %>%
+#   tidyr::pivot_longer(cols = -c(colonizer,settmort),
+#                       names_to = "cluster", values_to = "probability")%>%
+#   unique()
+# 
+# # Plot
+# ggplot(pred_df, aes(x = settmort, y = probability, color = cluster)) +
+#   geom_line() +
+#   geom_point(data=df_filtered2, aes(x=settmort, y=1, fill=factor(cluster)), color="black",pch=21, alpha=0.5,size=3)+
+#   facet_wrap(~colonizer) +
+#   theme_minimal() +
+#   labs(title = "Predicted Probabilities by Colonizer, Settler mortality and school enrollment (1900)")
 
