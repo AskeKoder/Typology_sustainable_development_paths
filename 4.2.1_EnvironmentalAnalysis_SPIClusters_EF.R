@@ -506,10 +506,10 @@ ggplot(means, aes(x =iso3, y = fitEF, fill = Cluster)) +
 #Extract growth rates and plot-------------------------------------------
 model <- finalEF
 getModel <- function(model){
-  if (model==finalGHG) c("fitGHG","lwrGHG","uprGHG")
-  else if (model==finalBio) c("fitBio","lwrBio","uprBio")
-  else if (model==finalWat) c("fitWat","lwrWat","uprWat")
-  else if (model==finalEF) c("fitEF","lwrEF","uprEF")
+  if (colnames(model$model)[1]=="log(GHG)") {c("fitGHG","lwrGHG","uprGHG", "t CO2 / cap")}
+  else if (colnames(model$model)[1]=="log(Biodiversity_Impact)") {c("fitBio","lwrBio","uprBio", "PDF-yr / cap")}
+  else if (colnames(model$model)[1]=="log(Scarce_Water_Consumption)") {c("fitWat","lwrWat","uprWat", "m3 H2O eq. / cap ")}
+  else if (colnames(model$model)[1]=="log(EF)") {c("fitEF","lwrEF","uprEF", "pers.yr.eq / cap")}
 }
 
 #Quick fix due to no GDP data for cuba
@@ -583,16 +583,34 @@ ggplot(rates, aes(x =iso3, y = Rate, fill = factor(cluster))) +
 #Test mean/rate scatter plot
 test <- left_join(means,rates, by="iso3")
 factor <- c(0.2,0.1)
-scale_factor <- 0.2*max(test$fitEF, na.rm=TRUE) / max(test$Rate, na.rm=TRUE)
+
 test$iso3 <- factor(test$iso3,levels=test$iso3[order(test$cluster,test$fitGHG)])
+# ggplot(test, aes(x = iso3)) +
+#   geom_col(aes(y = fitEF, fill = factor(cluster)), width = 0.6) +
+#   geom_errorbar(aes(ymin = lwrEF, ymax = uprEF), width = 0.2) +
+#   # Scale y2 up to match y1 axis
+#   geom_point(aes(y = Rate * scale_factor), color = "black",size=0.9) +
+#   geom_errorbar(aes(ymin = lwrRate* scale_factor, ymax = uprRate* scale_factor), width = 0.2)+
+#   scale_y_continuous(
+#     name = "pers.eq /cap",
+#     sec.axis = sec_axis(~ . / scale_factor, name = "Yearly %-rate of change")
+#   ) +
+#   theme_minimal() +
+#   labs(x = "Country") +
+#   theme(
+#     axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+#     legend.position = "none"
+#   )
+
+scale_factor <- 0.2*max(test[,getModel(model)[1]], na.rm=TRUE) / max(test$Rate, na.rm=TRUE)
 ggplot(test, aes(x = iso3)) +
-  geom_col(aes(y = fitEF, fill = factor(cluster)), width = 0.6) +
-  geom_errorbar(aes(ymin = lwrEF, ymax = uprEF), width = 0.2) +
+  geom_col(aes(y = !!sym(getModel(model)[1]), fill = factor(cluster)), width = 0.6) +
+  geom_errorbar(aes(ymin = !!sym(getModel(model)[2]), ymax = !!sym(getModel(model)[3])), width = 0.2) +
   # Scale y2 up to match y1 axis
   geom_point(aes(y = Rate * scale_factor), color = "black",size=0.9) +
   geom_errorbar(aes(ymin = lwrRate* scale_factor, ymax = uprRate* scale_factor), width = 0.2)+
   scale_y_continuous(
-    name = "pers.eq /cap",
+    name = getModel(model)[4],
     sec.axis = sec_axis(~ . / scale_factor, name = "Yearly %-rate of change")
   ) +
   theme_minimal() +

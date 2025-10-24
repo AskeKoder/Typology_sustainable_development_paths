@@ -8,8 +8,9 @@ library(urca)
 # =========================================================
 # 0) Read data
 # =========================================================
-data <- read.csv("TFPdata_EBE.csv")%>%
-  select(-X)
+data <- read.csv("TFPdata_V2.csv")%>%
+  select(-X)%>%
+  filter(TFP != 0)
 
 clusters <-readRDS("4_RankedClusters.RDS")%>%
   select(Country,iso3=SPI_countrycode,Cluster = Baseline)
@@ -299,3 +300,12 @@ run_all_clusters <- function(df, leads_lags = 1, include_lags = TRUE, time_fe = 
 results <- run_all_clusters(df, leads_lags = 1, include_lags = TRUE, time_fe = TRUE)
 results$long_run
 results$short_run
+
+
+df_summary <- df %>%
+  group_by(Cluster) %>%
+  summarize(
+    count_IDs = n_distinct(iso3),
+    sum_X_2020 = sum(Population[year == 2020], na.rm = TRUE)
+  )
+df_summary
