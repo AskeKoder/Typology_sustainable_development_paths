@@ -200,7 +200,7 @@ car::Anova(fit2,type=2)
 
 
 fit3 <- multinom(cluster ~ colonizer+prienr1900+settmort,
-                 data=df_model)
+                 data=df_model, maxit=500)
 summary(fit3)           
 
 z <- summary(fit3)$coefficients/ summary(fit3)$standard.errors

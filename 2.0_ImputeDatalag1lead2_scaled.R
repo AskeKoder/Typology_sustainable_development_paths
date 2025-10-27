@@ -1,3 +1,5 @@
+rm(list = ls())
+
 #Import libraries 
 library(mice)
 library(dplyr)
@@ -27,9 +29,14 @@ naOverview <- data%>%
 levelplot(as.matrix(naOverview))
 
 
-#Correlation matrix of missingness
-naData <- as.integer(is.na(data))
-levelplot(cor(as.matrix(naData)))
+#Correlation matrix 
+levelplot(cor(as.matrix(data[,5:67]), use="complete.obs"),xlab="",ylab="",
+          scales = list(
+            x = list(
+              #at = c(-3, -1.5, 0, 1.5, 3),   # tick positions
+              labels = 4:66  # tick labels
+            )
+          ))
 
 #Iputation of Share slums by linear interpolation ----------------------------------------
 #Imputation of Share slums is linear interpolation if surrounding years are observed
@@ -77,7 +84,7 @@ table(rowSums(pred)) #100-1000 parameters for each model is too much
 # 
 # par(mfrow=c(1,1))
 # corr <- cor(data[,5:ncol(data)],use="complete.obs")
-# labels <- 5:ncol(data)
+# labels <- 4:(ncol(data)-1)
 # qgraph(corr, layout="spring",threshold= 0,
 #        labels=labels,
 #        vsize=3.5,repulsion=0.75,
@@ -98,14 +105,7 @@ for (var in rownames(pred)) {
   pred[var,othr_yrs] <-0
   
   #Set up MTW
-  # if (var_name %in% c(,
-  #                     "Hospital_Beds_per_1000")
   var_othr_yrs <- paste0(var_name,c(max(c(2000,as.integer(year)-1)),min(c(as.integer(year)+2,2020))))
-  
-  
-  
-  
-  
   
   #include in predictor matrix
   pred[var,var_othr_yrs] <- 1

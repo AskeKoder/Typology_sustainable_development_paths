@@ -59,7 +59,7 @@ df[df$iso3%in%col_never$Code,"colonizer"] <- "Not colonized" #Add the option to 
 
 #Load clusters
 clusterVariations <- readRDS("4_RankedClusters.RDS")%>%
-  select(iso3=SPI_countrycode, cluster = 'DLSFew_bestAlignment')%>%
+  select(iso3=SPI_countrycode, cluster = 'DLSFew_coverage')%>%
   mutate(cluster= factor(cluster))
 
 #Group colonizers with less than 10 observations
@@ -172,63 +172,106 @@ p <- 2*(1-pnorm(abs(z),0,1))
 print(p)
 car::Anova(fit3,type=2)
 
+fit4 <- multinom(cluster ~ settmort+prienr1900,
+                 data=df_model,maxit=500)
+summary(fit4)
+z <- summary(fit4)$coefficients/ summary(fit4)$standard.errors
+p <- 2*(1-pnorm(abs(z),0,1))
+print(p)
+car::Anova(fit4,type=2)
+
+#Ensure that datasets are comparable
+df_compare <- df_model%>%
+  na.omit()
+AIC(multinom(cluster ~ settmort+prienr1900,
+         data=df_compare,maxit=500),multinom(cluster ~ colonizer+ settmort+prienr1900,
+                                           data=df_compare,maxit=500) )
+#Without colonizer is the best
 
 # Make prediction grid
 newdata <- expand.grid(
-  colonizer = levels(df_model$colonizer),
   prienr1900 = seq(min(df_model$prienr1900,na.rm=TRUE), max(df_model$prienr1900,na.rm=TRUE), length.out = 50),
   settmort = seq(min(df_model$settmort,na.rm=TRUE), max(df_model$settmort,na.rm=TRUE), length.out = 50)
 )
 
 # Get predicted probabilities
-preds <- predict(fit3, newdata = newdata, type = "probs")
+preds <- predict(fit4, newdata = newdata, type = "probs")
 
 # Convert to long format
 pred_df <- cbind(newdata, preds) %>%
-  tidyr::pivot_longer(cols = -c(colonizer,settmort,prienr1900),
+  tidyr::pivot_longer(cols = -c(settmort,prienr1900),
                       names_to = "cluster", values_to = "probability")%>%
   unique()
+# 
+# preds <- data.frame(ggeffects::ggemmeans(fit4, terms=c("prienr1900","settmort [3:7 by=0.4]")))
+# ggplot(preds, aes(x=x, y=predicted,color = response.level))+
+#   geom_line()+
+#   geom_ribbon(
+#     aes(ymin = conf.low, ymax = conf.high, fill = response.level),
+#     alpha = 0.2,
+#     color = NA
+#   )+
+#   labs(x="Primary school enrollment",
+#        y="Probability")+
+#   theme_minimal()+
+#   facet_wrap(~group)
 
-pred_df_max <- pred_df %>%
-  group_by(colonizer,settmort,prienr1900) %>%
-  slice_max(probability, with_ties = FALSE) %>%
-  ungroup()
 
-# Plot
-ggplot(pred_df_max, aes(x = settmort, y = prienr1900, fill = cluster)) +
-  geom_tile() +
-  geom_point(data=df_model, aes(x=settmort, y=prienr1900, fill=factor(cluster)), color="black",pch=21, alpha=0.5,size=3)+
-  facet_wrap(~colonizer) +
+library(ggplot2)
+
+
+
+ggplot(pred_df, aes(x = prienr1900, y = settmort, z = probability)) +
+  geom_contour_filled() +
+  geom_point(data=df_model, aes(x=prienr1900, y=settmort,z=0,shape=colonizer),color="salmon")+
+  labs(x="Primary school enrollment (1900)",
+       y="log(settler mortality)",
+       fill="Predicted probability",
+       shape = "Observation and \ncolonizer identity",
+       color=NULL)+
   theme_minimal() +
-  labs(title = "Predicted Probabilities by Colonizer, Settler mortality and school enrollment (1900)")
-
-
-
-
-
-#Plot as function of settmort (fit 2 due to better parameter estimates)
-preds <- data.frame(ggeffects::ggemmeans(fit2, terms=~settmort+colonizer))
-ggplot(preds, aes(x=x, y=predicted, color=response.level))+
-  geom_line(show.legend = FALSE) +
-  geom_point(data=df_model%>%
-               select(response.level=cluster,
-                      group=colonizer,
-                      x=settmort)%>%
-               na.omit(),
-             aes(x=x,y=0, color=response.level),
-             shape=4,size=3, stroke = 1.5,alpha=0.7,
-             position = position_jitter(width = 0.1, height = 0))+
-  facet_wrap(~group)+
-  geom_ribbon(
-    aes(ymin = conf.low, ymax = conf.high, fill = response.level),
-    alpha = 0.2,
-    color = NA
-  )+
-  labs(x="log(Settler mortality)",
-       y="Probability",
-       fill="Cluster",
-       color="Observed clusters")+
-  theme_minimal()
+  facet_wrap(~ factor(cluster, levels=1:11))
+# pred_df_max <- pred_df %>%
+#   group_by(colonizer,settmort,prienr1900) %>%
+#   slice_max(probability, with_ties = FALSE) %>%
+#   ungroup()
+# 
+# # Plot
+# ggplot(pred_df_max, aes(x = settmort, y = prienr1900, fill = cluster)) +
+#   geom_tile() +
+#   geom_point(data=df_model, aes(x=settmort, y=prienr1900, fill=factor(cluster)), color="black",pch=21, alpha=0.5,size=3)+
+#   facet_wrap(~colonizer) +
+#   theme_minimal() +
+#   labs(title = "Predicted Probabilities by Colonizer, Settler mortality and school enrollment (1900)")
+# 
+# 
+# 
+# 
+# 
+# 
+# #Plot as function of settmort (fit 2 due to better parameter estimates)
+# preds <- data.frame(ggeffects::ggemmeans(fit2, terms=~settmort+colonizer))
+# ggplot(preds, aes(x=x, y=predicted, color=response.level))+
+#   geom_line(show.legend = FALSE) +
+#   geom_point(data=df_model%>%
+#                select(response.level=cluster,
+#                       group=colonizer,
+#                       x=settmort)%>%
+#                na.omit(),
+#              aes(x=x,y=0, color=response.level),
+#              shape=4,size=3, stroke = 1.5,alpha=0.7,
+#              position = position_jitter(width = 0.1, height = 0))+
+#   facet_wrap(~group)+
+#   geom_ribbon(
+#     aes(ymin = conf.low, ymax = conf.high, fill = response.level),
+#     alpha = 0.2,
+#     color = NA
+#   )+
+#   labs(x="log(Settler mortality)",
+#        y="Probability",
+#        fill="Cluster",
+#        color="Observed clusters")+
+#   theme_minimal()
 
 
 

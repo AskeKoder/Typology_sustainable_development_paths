@@ -5,7 +5,7 @@ library(tidyr)
 
 #Load Data ---------------------------------------
 # Define file paths
-data_dir <- "Data/"
+data_dir <- "Data_WellBeing/"
 subfolder <- "Justus and william/"
 
 files <- list(
@@ -59,6 +59,9 @@ if (scaled){
 }
 nIndicators <- ncol(SPI_Time_Series)-4
 nYears <- length(unique(SPI_Time_Series$SPI_year))
+
+#Completeness
+1-sum(is.na(SPI_Time_Series))/(nIndicators*nYears*length(unique(SPI_Time_Series$Country)))
 
 #Filter out countries with high missingness
 na <- SPI_Time_Series %>%
@@ -239,13 +242,21 @@ naMap <- extendedData %>%
   summarise_all(~sum(is.na(.)))%>%
   select(-SPI_year)
 
-levelplot(as.matrix(naMap))
+levelplot(as.matrix(naMap),xlab="Years after 1990",ylab="",colorkey = list(
+  space = "right",
+  title = "Number of missing values"
+),
+col.regions = viridis::viridis(100))
 
 #Remove early years due to important indicators missing data
 extendedData <- extendedData%>%
   filter(SPI_year>=2000)
 
 summary(extendedData)
+
+#Completeness
+1-sum(is.na(extendedData))/((ncol(extendedData)-4)*length(unique(extendedData$SPI_year))*length(unique(extendedData$Country)))
+
 
 # if (scaled){
 #   write.csv(extendedData,"extendedDataScaled.csv")
