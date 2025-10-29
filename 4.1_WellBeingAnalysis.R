@@ -1,13 +1,14 @@
-#This script analyses the clusters resulting from using lag lead imputation on scaled indicators
+rm(list = ls())
+
 library(countrycode) #For standardizing country names
-library(rnaturalearth)
+library(rnaturalearth) #For world maps
 library(ggplot2)
 library(tidyr)
 library(readxl)
 library(dplyr)
 
 
-data <- read.csv("ImputedDataLag1Lead2_maxit30_scaled.csv")%>%
+data <- read.csv("2_ImputedData.csv")%>%
   select(-c("X",".id"))%>%
   relocate(.imp, .after=last_col())
 
@@ -607,9 +608,13 @@ ggplot(long_set_filtered, aes(x = SPI_year, y = Median, color = cluster, fill = 
 
 
 
+######################################################################################
+#Compare clusterings Baseline and DLSFew_coverage
+######################################################################################
 
-#Compare clusterings in sankey plot-----------------------------------------------
+#reload clsuters 
 AllClusters <- readRDS("4_RankedClusters.RDS")
+#Sankey plot
 library(ggsankey)
 df_long <- AllClusters %>%
   make_long(Baseline, 'DLSFew_coverage')
@@ -626,4 +631,131 @@ ggplot(df_long, aes(x = x,
   labs(title = "",
        x = "")
 
+#Median comparison
 
+#Select the variables included in DLSFew_coverage ('Few_indicators_SPI_preferred')
+selected_vars <- rownames(batch_scaled)[batch_scaled[, 'Few_indicators_SPI_preferred'] == 1]
+#Get names of variables
+selected_vars[length(selected_vars)+1] <- "Share_not_in_slums"
+variables <- selected_vars
+
+DLS_set <- clusteredData %>%
+  left_join(AllClusters, by="Country")%>%
+  group_by(SPI_year, DLSFew_coverage) %>%
+  mutate(Share_not_in_slums = 100-Share_Slums)%>%
+  dplyr::select(c("SPI_year", "DLSFew_coverage",
+                  selected_vars))%>%
+  rename(cluster = DLSFew_coverage)%>%
+  summarise(across(all_of(selected_vars),
+                   list(
+                     median = ~median(., na.rm = TRUE),
+                     q1 = ~quantile(., 0.25, na.rm = TRUE),
+                     q3 = ~quantile(., 0.75, na.rm = TRUE)
+                   ),
+                   .names = "{.col}_{.fn}"),
+            .groups = "drop")%>%
+  select(-starts_with("Share_Slums"))
+
+
+#Convert to long format for plotting
+DLS_long_median <- DLS_set %>%
+  select(1,2, ends_with("_median"))%>%
+  pivot_longer(cols = ends_with("_median"),
+               names_to = "Variable",
+               values_to = "Median",
+               names_pattern = "(.*)_median")
+DLS_long_q1 <- DLS_set %>%
+  select(1,2, ends_with("_q1"))%>%
+  pivot_longer(cols = ends_with("_q1"),
+               names_to = "Variable",
+               values_to = "Q1",
+               names_pattern = "(.*)_q1")
+DLS_long_q3 <- DLS_set %>%
+  select(1,2, ends_with("_q3"))%>%
+  pivot_longer(cols = ends_with("_q3"),
+               names_to = "Variable",
+               values_to = "Q3",
+               names_pattern = "(.*)_q3")
+# Combine all
+DLS_long_set <- DLS_long_median %>%
+  left_join(DLS_long_q1, by = c("SPI_year", "cluster", "Variable")) %>%
+  left_join(DLS_long_q3, by = c("SPI_year", "cluster", "Variable")) %>%
+  mutate(Variable = factor(Variable, levels = variables),
+         cluster = factor(cluster))
+
+
+cluster_names <- 1:length(unique(clusters$cluster))
+cluster_colors <- setNames(scales::hue_pal()(length(unique(clusters$cluster))), cluster_names)
+pDLS <- ggplot(DLS_long_set, aes(x = SPI_year, y = Median, color = cluster, fill = cluster)) +
+  geom_ribbon(aes(ymin = Q1, ymax = Q3), alpha = 0.2, color = NA) +
+  geom_line(linewidth = 0.8) +
+  facet_wrap(~ Variable) +
+  theme_minimal() +
+  #scale_fill_manual(values = cluster_colors)+
+  #scale_color_manual(values = cluster_colors) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Year", y = "Cluster Median (with IQR)",title = "DLSFew_coverage")+
+  theme(plot.title = element_text(size = 5))
+
+
+
+Base_set <- clusteredData %>%
+  left_join(AllClusters, by="Country")%>%
+  group_by(SPI_year, Baseline) %>%
+  mutate(Share_not_in_slums = 100-Share_Slums)%>%
+  dplyr::select(c("SPI_year", "Baseline",
+                  selected_vars))%>%
+  rename(cluster = Baseline)%>%
+  summarise(across(all_of(selected_vars),
+                   list(
+                     median = ~median(., na.rm = TRUE),
+                     q1 = ~quantile(., 0.25, na.rm = TRUE),
+                     q3 = ~quantile(., 0.75, na.rm = TRUE)
+                   ),
+                   .names = "{.col}_{.fn}"),
+            .groups = "drop")%>%
+  select(-starts_with("Share_Slums"))
+
+
+#Convert to long format for plotting
+Base_long_median <- Base_set %>%
+  select(1,2, ends_with("_median"))%>%
+  pivot_longer(cols = ends_with("_median"),
+               names_to = "Variable",
+               values_to = "Median",
+               names_pattern = "(.*)_median")
+Base_long_q1 <- Base_set %>%
+  select(1,2, ends_with("_q1"))%>%
+  pivot_longer(cols = ends_with("_q1"),
+               names_to = "Variable",
+               values_to = "Q1",
+               names_pattern = "(.*)_q1")
+Base_long_q3 <- Base_set %>%
+  select(1,2, ends_with("_q3"))%>%
+  pivot_longer(cols = ends_with("_q3"),
+               names_to = "Variable",
+               values_to = "Q3",
+               names_pattern = "(.*)_q3")
+# Combine all
+Base_long_set <- Base_long_median %>%
+  left_join(Base_long_q1, by = c("SPI_year", "cluster", "Variable")) %>%
+  left_join(Base_long_q3, by = c("SPI_year", "cluster", "Variable")) %>%
+  mutate(Variable = factor(Variable, levels = variables),
+         cluster = factor(cluster))
+
+
+cluster_names <- 1:length(unique(clusters$cluster))
+cluster_colors <- setNames(scales::hue_pal()(length(unique(clusters$cluster))), cluster_names)
+pBase <- ggplot(Base_long_set, aes(x = SPI_year, y = Median, color = cluster, fill = cluster)) +
+  geom_ribbon(aes(ymin = Q1, ymax = Q3), alpha = 0.2, color = NA) +
+  geom_line(linewidth = 0.8) +
+  facet_wrap(~ Variable) +
+  theme_minimal() +
+  #scale_fill_manual(values = cluster_colors)+
+  #scale_color_manual(values = cluster_colors) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Year", y = "Cluster Median (with IQR)", title = "Baseline")+
+  theme(plot.title = element_text(size = 5))
+
+library(patchwork)
+pBase+pDLS

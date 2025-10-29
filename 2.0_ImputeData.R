@@ -26,7 +26,27 @@ hist(naIndicators,breaks=20, xlab="Fraction of missing values", ylab="Number of 
 naOverview <- data%>%
   group_by(Country)%>%
   summarise_all(~sum(is.na(.)))
+
 levelplot(as.matrix(naOverview))
+
+
+naOverview <- data %>%
+  group_by(Region, Country) %>%
+  summarise(across(everything(), ~ sum(is.na(.))), .groups = "drop") %>%
+  arrange(Region, Country)
+
+mat <- as.matrix(naOverview %>% select(-Region))
+rownames(mat) <- naOverview$Country
+region_breaks <- cumsum(table(naOverview$Region))
+levelplot(mat,
+          scales=list(x=list(rot=90)),
+          panel=function(...) {
+            panel.levelplot(...)
+            # draw horizontal lines between regions
+            for (b in region_breaks[-length(region_breaks)]) {
+              panel.abline(v = b + 0.5, col="black", lwd=2)
+            }
+          })
 #6 countries are missing the entire set of extension variables, all countries are well observed in SPI
 
 #Correlation matrix 
@@ -45,21 +65,21 @@ levelplot(cor(as.matrix(data[,5:67]), use="complete.obs"),xlab="",ylab="",
 #Iputation of Share slums by linear interpolation 
 ##############################################################################
 #Imputation of Share slums is linear interpolation if surrounding years are observed
-df_interpolated <- data %>%
-  group_by(Country) %>%
-  arrange(SPI_year) %>%
-  mutate(Share_Slums_interp = na.approx(Share_Slums, x = SPI_year, na.rm = FALSE,
-                                        #maxgap=1
-                                        )) %>%
-  ungroup()
-
-#Visually inspect interpolations
-C <- unique(data$Country)[140]
-ggplot()+
-  geom_point(data=df_interpolated,aes(x=SPI_year,y=Share_Slums_interp,color="Interpolated"))+
-  geom_point(data=data,aes(x=SPI_year,y=Share_Slums,color="Observed"))+
-  labs(title=paste("Interpolated values for"))+
-  facet_wrap("Country")
+# df_interpolated <- data %>%
+#   group_by(Country) %>%
+#   arrange(SPI_year) %>%
+#   mutate(Share_Slums_interp = na.approx(Share_Slums, x = SPI_year, na.rm = FALSE,
+#                                         #maxgap=1 #Belarus has a longer gap interpolated
+#                                         )) %>%
+#   ungroup()
+# 
+# #Visually inspect interpolations
+# C <- unique(data$Country)[140]
+# ggplot()+
+#   geom_point(data=df_interpolated,aes(x=SPI_year,y=Share_Slums_interp,color="Interpolated"))+
+#   geom_point(data=data,aes(x=SPI_year,y=Share_Slums,color="Observed"))+
+#   labs(title=paste("Interpolated values for"))+
+#   facet_wrap("Country")
 
 #Incorporate changes
 data <- data %>%
@@ -88,23 +108,23 @@ pred <- quickpred(data_wide,
                   method = "pearson",
                   exclude = c("Country_0","SPI_countrycode_1")
 )
-table(rowSums(pred)) #100-1000 parameters for each model is far too much
+#table(rowSums(pred)) #100-1000 parameters for each model is far too much
 
 
 
 
 #2 ) Identify variables that should always act as predictors
-colors <-rgb(colSums(is.na(data[,c(2,5:length(data))]))>0,
-             colSums(is.na(data[,c(2,5:length(data))]))>0,
-             colSums(is.na(data[,c(2,5:length(data))]))>0)
-
-par(mfrow=c(1,1))
-corr <- cor(data[,5:ncol(data)],use="complete.obs")
-labels <- 4:(ncol(data)-1)
-qgraph::qgraph(corr, layout="spring",threshold= 0,
-       labels=labels,
-       vsize=3.5,repulsion=0.75,
-       color = colors)
+# colors <-rgb(colSums(is.na(data[,c(2,5:length(data))]))>0,
+#              colSums(is.na(data[,c(2,5:length(data))]))>0,
+#              colSums(is.na(data[,c(2,5:length(data))]))>0)
+# 
+# par(mfrow=c(1,1))
+# corr <- cor(data[,5:ncol(data)],use="complete.obs")
+# labels <- 4:(ncol(data)-1)
+# qgraph::qgraph(corr, layout="spring",threshold= 0,
+#        labels=labels,
+#        vsize=3.5,repulsion=0.75,
+#        color = colors)
 keep <- colnames(data)[c(5,7,12,22,31,33,40,50)]
 
 
@@ -141,7 +161,7 @@ for (var in rownames(pred)) {
 #Avoid using the categorical variables as predictors since we have too many categories
 pred[, "Country"] <- 0
 pred[, "SPI_countrycode"] <- 0
-table(rowSums(pred))
+#table(rowSums(pred))
 
 
 #4 ) Break direct feedback loops
@@ -175,7 +195,7 @@ for (i in 1:ncol(pred)){
   }
 }
 #Check
-table(rowSums(pred)) #Variable years are being predicted with 8-35 predictors
+#table(rowSums(pred)) #Variable years are being predicted with 8-35 predictors
 
 ###############################################################################
 #Setup mice
@@ -232,16 +252,22 @@ overview <- imp$loggedEvents
 #################################################################################
 
 #Convergence plots 
-NAlist <-  colnames(data_wide)[colSums(is.na(data_wide))>0]
-i<-1
-
-#Manual loop through plots
-#Lines should ideally be entangled and without trend towards the end
-#However, not meeting those conditions for all variable-years
-#is not devastaing as inferential 
-#validity does not depend on formal convergence (Buuren 2020)
-plot(imp, NAlist[i:(i+17)],layout=c(6,6))
-i <- i + 18
+# NAlist <-  colnames(data_wide)[colSums(is.na(data_wide))>0]
+# i<-1
+# 
+# #Manual loop through plots
+# #Lines should ideally be entangled and without trend towards the end
+# #However, not meeting those conditions for all variable-years
+# #is not devastaing as inferential 
+# #validity does not depend on formal convergence (Buuren 2020)
+# p <- plot(imp, NAlist[i:(i+17)],layout=c(6,6))
+# # build a filename for each plot
+# file_name <- paste0("Figures/SI/Data and method/Convergence/plot_", i, ".png")
+# 
+# png(file_name, width = 2400, height = 800, res = 150)
+# print(p)     # draw plot to device
+# dev.off()    # close file device
+# i <- i + 18
 
 
 
