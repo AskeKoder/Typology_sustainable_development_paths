@@ -1,6 +1,7 @@
 library(readxl)
 library(dplyr)
 library(tidyr)
+library(lattice)
 
 
 #Load Data ---------------------------------------
@@ -214,19 +215,20 @@ for (dataset in datasets) {
 }
 
 
-
-#Filter data-----------------------------------------------
+##########################################################################
+#Filtering after extension 
+##########################################################################
+#Visualize Nas over time
 naMap <- extendedData %>%
   group_by(SPI_year)%>%
   summarise_all(~sum(is.na(.)))%>%
   select(-SPI_year)
-library(lattice)
 levelplot(as.matrix(naMap))
 
 #Removal due to high missingness
 extendedData <- extendedData%>%
-  select(-c(Share_Overcrowding,
-            House_Price_Income_Ratio))
+  select(-c(Share_Overcrowding, #missing for 100 + countries all years
+            House_Price_Income_Ratio)) #missing for 100 + countries all years
 
 #Removal of unfit indicators
 extendedData <- extendedData%>%
@@ -236,30 +238,30 @@ extendedData <- extendedData%>%
             Essential_Health_Coverage, #Measures UHC, which is already in SPI
             Child_Mortality)) #Already measured in SPI
 
-
+#Visualize again
 naMap <- extendedData %>%
   group_by(SPI_year)%>%
   summarise_all(~sum(is.na(.)))%>%
   select(-SPI_year)
 
-levelplot(as.matrix(naMap),xlab="Years after 1990",ylab="",colorkey = list(
-  space = "right",
-  title = "Number of missing values"
-),
-col.regions = viridis::viridis(100))
+levelplot(as.matrix(naMap),xlab="Years after 1990",ylab="",
+          colorkey = list( 
+            space = "right",
+            title = "Number of missing values"),
+          col.regions = viridis::viridis(100))
 
-#Remove early years due to important indicators missing data
+#Remove early years due to higher missingness these years
 extendedData <- extendedData%>%
   filter(SPI_year>=2000)
-
 summary(extendedData)
 
-#Completeness
+#Completeness after addition of extended data and filtering 
 1-sum(is.na(extendedData))/((ncol(extendedData)-4)*length(unique(extendedData$SPI_year))*length(unique(extendedData$Country)))
 
 
+#Export
 # if (scaled){
 #   write.csv(extendedData,"extendedDataScaled.csv")
-# }
+# }else{
 #write.csv(extendedData,"extendedData.csv")
-
+#}

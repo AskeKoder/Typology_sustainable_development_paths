@@ -1,23 +1,25 @@
 # This script runs clusterings on imputed data using scaled indicators directly from SPI
+rm(list = ls())
 
 #Load libraries
 library(readxl)
 library(dplyr)
 library(tidyr)
-library(partitionComparison)
-library(NbClust)
+library(partitionComparison) #For mirkin metric
+library(NbClust) #For hierachical clustering
 library(ggplot2)
 library(reshape2)
 
-#Read imputed data 
-data <- read.csv("ImputedDataLag1Lead2_maxit30_scaled.csv")%>%
+#Read imputed data
+data <- read.csv("2_ImputedData.csv")%>%
   select(-c(X,.id))%>%
   relocate(.imp, .after=last_col())
 
-#Read experiment file and set names in the correct order
+#Read experiment file and set names in the correct order to fit the scaled data
 Experiments <- read_xlsx("IndicatorsForClusters.xlsx",sheet="Experiments")%>%
   na.omit()%>%
   data.frame()
+
 rownames(Experiments) <- colnames(data)[5:(ncol(data)-1)]
 rownames(Experiments) <- rownames(Experiments)[c(6,5,4,3,2,1,
                                                    10,9,8,7,
