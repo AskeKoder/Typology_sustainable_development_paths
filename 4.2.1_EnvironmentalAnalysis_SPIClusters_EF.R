@@ -6,7 +6,7 @@ library(ggplot2)
 
 
 #Load All data ----------------------------------------------------------
-WBdata <- read.csv("ImputedDataLag1Lead2_maxit30_scaled.csv")%>%
+WBdata <- read.csv("2_ImputedData.csv")%>%
   select(-c("X",".id"))%>%
   relocate(.imp, .after=last_col())
 

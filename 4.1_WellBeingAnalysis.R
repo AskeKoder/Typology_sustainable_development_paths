@@ -32,9 +32,12 @@ batch_scaled <- Experiments%>%
            "Few_indicators_closest_DLS_coverage_90",
            "No_non_DLS_BHNFWB"
   ))%>%
+  dplyr::rename(DLSFew_coverage = Few_indicators_SPI_preferred)%>% #Rename from old naming
   as.matrix()%>%
   na.omit()
-
+   
+#The scaled indicators of SPI have a different order than the unscaled ones used in the excel
+#Therefore we have to reorganize
 rownames(batch_scaled) <- colnames(data)[5:(ncol(data)-1)]
 rownames(batch_scaled) <- rownames(batch_scaled)[c(6,5,4,3,2,1,
                                                    10,9,8,7,
@@ -51,7 +54,7 @@ rownames(batch_scaled) <- rownames(batch_scaled)[c(6,5,4,3,2,1,
                                                    53,55,57,56,
                                                    54,60,58,59,
                                                    61,62,63)]
-
+#Convert to numeric
 batch_scaled[,c(1:ncol(batch_scaled))] <- as.numeric(batch_scaled[,c(1:ncol(batch_scaled))])
 
 #Merge data sets
@@ -396,6 +399,7 @@ ggplot(long_set_filtered, aes(x = SPI_year, y = Median, color = cluster, fill = 
 
 #Plot radarcharts -----------------------------------------------------------
 library(fmsb)
+#Baseline
 plot_list <- list()
 clustering = "Baseline"
 nMax <- length(unique(clusters$cluster))
@@ -469,6 +473,85 @@ for (i in 1:nMax){
   dev.off()
   
 }
+
+
+#DLSfew_coverage
+plot_list <- list()
+clustering = "DLSFew_coverage"
+nMax <- length(unique(clusters$cluster))
+for (i in 1:nMax){
+  cluster <- i
+  #Filter out other clusters
+  country_series <- clusteredData %>%
+    filter(cluster == as.character(i))
+  
+  #Calculate mean across imputed sets
+  country_series_filtered <- country_series%>%
+    filter(.imp!=0)%>%
+    dplyr::select(!c(Country,iso3,Region,cluster))%>%
+    group_by(SPI_year) %>%
+    summarise_all(mean)
+  
+  #Select indicators
+  id <- which(batch_scaled[,clustering]>0) #Get indicators from batch
+  indicators<- rownames(batch_scaled)[id]
+  country_series_filtered <- country_series_filtered%>%
+    select(all_of(indicators))
+  
+  #Add min max levels to data for plotting
+  mins <- data %>%
+    summarize_all(min,na.rm=TRUE)%>%
+    select(all_of(indicators))
+  
+  maxs <- data %>%
+    summarize_all(max,na.rm=TRUE)%>%
+    select(all_of(indicators))
+  
+  plottingData <- rbind(
+    maxs,
+    mins,
+    country_series_filtered
+  )
+  plottingData <- plottingData%>%
+      mutate(Share_Slums = 100-Share_Slums)%>%
+      rename(Share_not_in_slums=Share_Slums)
+
+  plottingData[1, "Share_not_in_slums"] <- 100
+  plottingData[2, "Share_not_in_slums"] <- 0
+  
+  #Sort columns according to DLS dimension
+  # order <- order(Experiments[rownames(Experiments)%in% colnames(plottingData),"Related.DLS.dimension"])
+  # 
+  #Define color scale
+  library(scales)
+  cluster_names <- 1:nMax
+  cluster_colors <- setNames(scales::hue_pal()(nMax), cluster_names)
+  
+  colors_border <- col_numeric(palette = c("grey",cluster_colors[cluster],cluster_colors[cluster],cluster_colors[cluster],"black"), domain = NULL)(0:20)
+  colors_fill <- adjustcolor(colors_border, alpha.f = 0.4)
+  
+  
+  
+  par(mai=c(0,0,0.5,0))
+  par(bg=NA)
+  png(filename = paste("Figures/WellBeingAnalysis/Radarchart",clustering,"_Cluster",i,".png"), width=500, height=500)
+  radarchart(plottingData, vlabels = id,
+             na.itp = FALSE, col=rep(3,52),
+             pcol = colors_border,
+             axistype = 0,
+             caxislabels = "",
+             plwd = 2,
+             plty = 1,
+             cglty=1,
+             cglcol = "grey60",
+             pty="",
+             title=paste0("Cluster ",cluster),
+             cex.main=2)
+  dev.off()
+  
+}
+
+
 
 #SPI Dimension means ---------------------------------------------------------------
 dimmeans <- clusteredData%>%

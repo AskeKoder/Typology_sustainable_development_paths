@@ -6,13 +6,13 @@ library(ggplot2)
 
 
 #Load All data ----------------------------------------------------------
-WBdata <- read.csv("ImputedDataLag1Lead2_maxit30_scaled.csv")%>%
+WBdata <- read.csv("2_ImputedData.csv")%>%
   select(-c("X",".id"))%>%
   relocate(.imp, .after=last_col())
 
 #Clusters from experiments
-clusterSelection <- "Few indicators_SPI_preferred"
-clusters <- readRDS("clusterVariations_laglead_scaled.RDS")%>%
+clusterSelection <- "DLSFew_coverage"
+clusters <- readRDS("4_RankedClusters.RDS")%>%
   select(Country,iso3 = SPI_countrycode,cluster = clusterSelection)
 
 #Read experiment file
@@ -30,6 +30,7 @@ batch_scaled <- Experiments%>%
            "Few_indicators_closest_DLS_coverage_90",
            "No_non_DLS_BHNFWB"
   ))%>%
+  rename(DLSFew_coverage = Few_indicators_SPI_preferred)%>%
   as.matrix()%>%
   na.omit()
 
@@ -298,7 +299,6 @@ means <- cbind(means,exp(predict(finalWat,newdata = means,interval = "confidence
 colnames(means)[11:13] <- c("fitWat","lwrWat","uprWat")
 
 
-
 #Plot Estimated means of the world
 #GHG
 cluster_names <- 1:11
@@ -385,7 +385,7 @@ ggplot(means, aes(x =iso3, y = fitWat, fill = Cluster)) +
 
 
 
-#Extract growth rates and plot-------------------------------------------
+#Extract growth rates and plot (old)-------------------------------------------
 model <- finalGHG
 
 #Quick fix due to no GDP data for cuba
@@ -480,6 +480,133 @@ ggplot(test, aes(x = iso3)) +
     #legend.position = "none"
   )+
   scale_fill_manual(values = cluster_colors)
+
+
+
+
+#Extract growth rates and plot ver 2-------------------------------------------
+model <- finalBio
+getModel <- function(model){
+  if (colnames(model$model)[1]=="log(GHG)") {c("fitGHG","lwrGHG","uprGHG", "t CO2 / cap")}
+  else if (colnames(model$model)[1]=="log(Biodiversity_Impact)") {c("fitBio","lwrBio","uprBio", "PDF-yr / cap")}
+  else if (colnames(model$model)[1]=="log(Scarce_Water_Consumption)") {c("fitWat","lwrWat","uprWat", "m3 H2O eq. / cap ")}
+  else if (colnames(model$model)[1]=="log(EF)") {c("fitEF","lwrEF","uprEF", "pers.yr.eq / cap")}
+}
+
+#Quick fix due to no GDP data for cuba
+nCountries<-length(grep("Year:",names(model$coefficients)))+1
+
+#Extract ML estimates
+theta_hat <- rep(0,nCountries)
+theta_hat[1] <- model$coefficients[2] #Assign intercept slope to first country
+theta_hat[2:nCountries] <- model$coefficients[grep("Year:",names(model$coefficients))] + model$coefficients[2] #intercept + country slope
+
+
+#(b1+b2) Variance estimate #year:Afghanistan is the intercept
+var <- diag(vcov(model))[grep("Year",rownames(vcov(model)))] #Extract diagonal of covariance matrix to get variance of parameters
+cov <- vcov(model)[grep("Year:",rownames(vcov(model))),"Year"] #Covariances between slope parameters and intercept slope
+
+#Assign variances to countries:
+theta_hat_var <- sapply(1:length(unique(data$Country)),
+                        function(x){ if (x==1){
+                          var[1]
+                        } else{
+                          var[1]+var[x]+ 2*cov[x-1]
+                        }
+                        })
+
+#Name the parameters appropriately
+names(theta_hat_var) <- names(var)
+names(theta_hat_var)[1] <- "Afghanistan"
+
+#Compute standard errors
+theta_hat_SE <- sqrt(theta_hat_var)
+
+#Compute confidence intervals in log domain
+df <- model$df.residual #Degrees of freedom
+alpha <- 0.05
+t_crit <- qt(1 - alpha/2, df)
+log_rate <- cbind(theta_hat,theta_hat-t_crit*theta_hat_SE,theta_hat+t_crit*theta_hat_SE)
+
+#Clean up data frame
+log_rate <- data.frame(log_rate)
+rownames(log_rate) <- gsub("Year:Country","",rownames(log_rate))
+colnames(log_rate)<-c("Rate","lwrRate","uprRate")
+log_rate$Country <- rownames(log_rate)
+
+#Convert to regular domain
+rate <- log_rate%>%
+  mutate(Rate=exp(Rate), lwrRate=exp(lwrRate),uprRate=exp(uprRate))
+
+#Convert to percent change
+rate[,c(1,2,3)] <- (rate[,c(1,2,3)]-1)*100
+
+#Join with clusters
+rates <- left_join(rate,clusters,by="Country")
+rates$Country <- factor(rates$Country, levels = rates$Country[order(rates$cluster,rates$Rate)])
+rates$iso3 <- factor(rates$iso3, levels = rates$iso3[order(rates$cluster,rates$Rate)])
+
+#Plot
+ggplot(rates, aes(x =iso3, y = Rate, fill = factor(cluster))) +
+  geom_col(width = 0.6) +
+  geom_errorbar(aes(ymin = lwrRate, ymax = uprRate), width = 0.2) +
+  theme_minimal() +
+  labs(
+    title = "",
+    y = paste("yearly %-rate of change in", var),
+    x = "Country"
+  ) +
+  #scale_fill_manual(values = cluster_colors)+
+  #scale_color_manual(values = cluster_colors) +
+  guides(fill = "none")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#Test mean/rate scatter plot
+test <- left_join(means,rates, by="iso3")
+factor <- c(0.2,0.1)
+
+test$iso3 <- factor(test$iso3,levels=test$iso3[order(test$cluster,test$fitGHG)])
+# ggplot(test, aes(x = iso3)) +
+#   geom_col(aes(y = fitEF, fill = factor(cluster)), width = 0.6) +
+#   geom_errorbar(aes(ymin = lwrEF, ymax = uprEF), width = 0.2) +
+#   # Scale y2 up to match y1 axis
+#   geom_point(aes(y = Rate * scale_factor), color = "black",size=0.9) +
+#   geom_errorbar(aes(ymin = lwrRate* scale_factor, ymax = uprRate* scale_factor), width = 0.2)+
+#   scale_y_continuous(
+#     name = "pers.eq /cap",
+#     sec.axis = sec_axis(~ . / scale_factor, name = "Yearly %-rate of change")
+#   ) +
+#   theme_minimal() +
+#   labs(x = "Country") +
+#   theme(
+#     axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+#     legend.position = "none"
+#   )
+
+scale_factor <- 0.2*max(test[,getModel(model)[1]], na.rm=TRUE) / max(test$Rate, na.rm=TRUE)
+ggplot(test, aes(x = iso3)) +
+  geom_col(aes(y = !!sym(getModel(model)[1]), fill = factor(cluster)), width = 0.6) +
+  geom_errorbar(aes(ymin = !!sym(getModel(model)[2]), ymax = !!sym(getModel(model)[3])), width = 0.2) +
+  # Scale y2 up to match y1 axis
+  geom_point(aes(y = Rate * scale_factor), color = "black",size=0.9) +
+  geom_errorbar(aes(ymin = lwrRate* scale_factor, ymax = uprRate* scale_factor), width = 0.2)+
+  scale_y_continuous(
+    name = getModel(model)[4],
+    sec.axis = sec_axis(~ . / scale_factor, name = "Yearly %-rate of change")
+  ) +
+  theme_minimal() +
+  labs(x = "Country") +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    legend.position = "none"
+  )
+
+
+
+
+
+
+
 
 #Fit Cluster model for GHG------------------
 library(lme4)

@@ -208,7 +208,13 @@ p <- 2*(1-pnorm(abs(z),0,1))
 print(p)
 car::Anova(fit3,type=2)
 
-
+#Should we exclude colonizer?
+df_compare <- df_model%>%
+  na.omit()
+AIC(multinom(cluster ~ settmort+prienr1900,
+             data=df_compare,maxit=500),multinom(cluster ~ colonizer+ settmort+prienr1900,
+                                                 data=df_compare,maxit=500) )
+#no
 
 #Aggregate model------------------------------------------------------
 # #Aggregate clusters not well represented in colonial data
