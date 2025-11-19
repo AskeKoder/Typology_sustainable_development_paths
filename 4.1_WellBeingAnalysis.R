@@ -13,7 +13,7 @@ data <- read.csv("2_ImputedData.csv")%>%
   relocate(.imp, .after=last_col())
 
 #Clusters from experiments
-clusterSelection <- 'DLSFew_coverage'
+clusterSelection <- 'Baseline'
 clusters <- readRDS("4_RankedClusters.RDS")%>%
   select(Country,iso3 = SPI_countrycode,cluster = clusterSelection)
 
@@ -68,7 +68,7 @@ clusteredData <- data %>%
 table(clusters$cluster)
 
 #PLot worldmap--------------------------------------------------------------------------------------
-world <- ne_countries(scale = "medium", returnclass = "sf",continent = c("south america","oceania","north america", "asia","europe","africa"))%>%
+world <- ne_countries(scale = "large", returnclass = "sf",continent = c("south america","oceania","north america", "asia","europe","africa"))%>%
   mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'SDZ',"SDN"))%>%
   mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'PN1',"PNG"))%>%
   mutate(adm0_iso = replace(adm0_iso,  adm0_iso == 'PR1',"PRT"))%>%
@@ -191,6 +191,7 @@ standardized_countries <- ifelse(HDI$Country %in% names(replacements),
 standardized_countries
 HDI$Country <- standardized_countries
 
+
 #Join HDI data with clusters
 HDI_clust <- left_join(HDI, data.frame(Country = clusters$Country,
                                        cluster = clusters$cluster,
@@ -213,6 +214,49 @@ summary <- HDI_clust%>%
   drop_na(cluster)%>%
   group_by(cluster)%>%
   summarise_at(3:7,CI)
+
+for (i in 1:nrow(summary)){
+  print(paste(summary[i,],collapse=" & "))
+}
+
+#HDI weighted average
+#Join HDI data with clusters
+HDI_clust_wa <- left_join(HDI, data.frame(Country = clusters$Country,
+                                       cluster = clusters$cluster,
+                                       iso3 = clusters$iso3,
+                                       by = "Country"))
+
+#Taiwan and North korea are not included in the HDI data
+#Calculate means and confidence intervals
+
+pop <- read.csv("world_population_World_Bank.csv")%>%
+  select(iso3 = 2,
+         Population = 67)
+
+HDI_clust_wa <- HDI_clust_wa %>%
+  left_join(pop, by = c("iso3" = "iso3"))
+  
+
+CI <- function(x, w) {
+  keep <- !is.na(x) & !is.na(w)
+  x <- x[keep]
+  w <- w[keep]
+  
+  # number of countries
+  n <- length(x)
+  mn <- weighted.mean(x, w)
+  # standard error using unweighted variance
+  se <- sd(x) / sqrt(n)
+  # 95% CI half-width
+  add <- qt(0.975, df = n - 1) * se
+  # formatted output
+  paste0(round(mn, 2), " ±", round(add, 2))
+}
+
+summary <- HDI_clust_wa %>%
+  drop_na(cluster) %>%
+  group_by(cluster) %>%
+  summarise(across(3:7, ~ CI(.x, w = Population)))
 
 for (i in 1:nrow(summary)){
   print(paste(summary[i,],collapse=" & "))
@@ -295,7 +339,7 @@ ggplot(HDI_clust,aes(x=log(GDP) ,y=HDI, color=factor(cluster), group=factor(Coun
 
 
 #Plot median of indicators over time -----------------------------------------------
-selected_vars <- rownames(batch_scaled)[batch_scaled[, 'Few_indicators_SPI_preferred'] == 1]
+selected_vars <- rownames(batch_scaled)[batch_scaled[, 'Baseline'] == 1]
 #Get names of variables
 selected_vars[length(selected_vars)+1] <- "Share_not_in_slums"
 variables <- selected_vars
@@ -346,9 +390,9 @@ long_set <- long_median %>%
 
 #Filter
 long_set_filtered <- long_set%>%
-  filter(cluster%in%c(2,3,4))
-  #filter(cluster%in%c(1,7,11))
-  #filter(cluster%in%c(9,10))
+  #filter(cluster%in%c(2,3,4))
+  filter(cluster%in%c(7,8,10))
+  #filter(cluster%in%c(5,6))
   #filter(cluster%in%c(2,3,5,6))
 
 
@@ -396,6 +440,7 @@ ggplot(long_set_filtered, aes(x = SPI_year, y = Median, color = cluster, fill = 
   ) +
   expand_limits(x = max(long_set_filtered$SPI_year) + 1) +  # add space for labels
   theme(plot.title = element_text(size = 5))
+
 
 #Plot radarcharts -----------------------------------------------------------
 library(fmsb)
@@ -717,7 +762,7 @@ ggplot(df_long, aes(x = x,
 #Median comparison
 
 #Select the variables included in DLSFew_coverage ('Few_indicators_SPI_preferred')
-selected_vars <- rownames(batch_scaled)[batch_scaled[, 'Few_indicators_SPI_preferred'] == 1]
+selected_vars <- rownames(batch_scaled)[batch_scaled[, 'DLSFew_coverage'] == 1]
 #Get names of variables
 selected_vars[length(selected_vars)+1] <- "Share_not_in_slums"
 variables <- selected_vars
