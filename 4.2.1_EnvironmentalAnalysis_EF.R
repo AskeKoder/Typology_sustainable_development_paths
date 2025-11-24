@@ -54,7 +54,7 @@ rownames(batch_scaled) <- rownames(batch_scaled)[c(6,5,4,3,2,1,
                                                    61,62,63)]
 
 batch_scaled[,c(1:ncol(batch_scaled))] <- as.numeric(batch_scaled[,c(1:ncol(batch_scaled))])
-clusterSelection <- gsub(" ","_",clusterSelection)
+
 indicators <- rownames(batch_scaled[batch_scaled[,clusterSelection]>0,])
 
 #Merge data sets
@@ -84,7 +84,7 @@ GDP <- GDP %>%
     ISO_Country = `Country Code`,
     Year,
     GDP_PPP_current_international_dollars)%>%
-  filter(Year %in% 2000:2020)%>%
+  #filter(Year %in% 2000:2020)%>%
   mutate(Country = as.factor(Country),
          ISO_Country = as.factor(ISO_Country),
          Year = as.numeric(Year))%>%
@@ -105,8 +105,8 @@ HDI <- read.csv("Data_WellBeing/human-development-index.csv", header = TRUE, str
          ISO_Country = Code,
          HDI = Human.Development.Index)%>%
   mutate(Country = as.factor(Country),
-         ISO_Country = as.factor(ISO_Country))%>%
-  filter(Year %in% 2000:2020)
+         ISO_Country = as.factor(ISO_Country))#%>%
+  #filter(Year %in% 2000:2020)
 
 summary(HDI)
 str(HDI)
@@ -114,8 +114,41 @@ HDI$Country_std  <- countrycode(HDI$Country, origin="country.name",destination="
 HDI$iso3  <- countrycode(HDI$Country, origin="country.name",destination="iso3c")
 print(unique(HDI[is.na(HDI$Country_std), "Country"])) #Only aggrregates and micronesia,  which is not included in the clustering
 
+#Get TFP data
+# TFP <- read.csv("Data_Environmental/WB_ASPD_WIDEF.csv")%>%
+#   filter(INDICATOR =="WB_ASPD_DTFP")%>%
+#   tidyr::pivot_longer(
+#     cols = matches("X\\d{4}"),  # four numbers(\\d{4}) After X 
+#     names_to = "Year",
+#     values_to = "TFP"
+#   )%>%
+#   mutate(Year = as.numeric(gsub("X","",Year)))%>%
+#   #filter(Year %in% 2000:2020)%>%
+#   select(Year,
+#          Country = REF_AREA_LABEL,
+#          iso3=REF_AREA,
+#          TFP)%>%
+#   mutate(Country = as.factor(Country),
+#          iso3 = as.factor(iso3))
 
 
+TFPindexUS <- read_xlsx("data_Environmental/pwt110.xlsx", sheet="Data")%>%
+  select(iso3 = countrycode,
+         Country= country,
+         Year = year,
+         TFPindex=ctfp) #TFP level at current PPPs (USA=1 all years)
+
+TFPUSindex2017 <- read.csv("data_Environmental/TFPUSindex2017.csv")%>%
+  mutate(Year = as.numeric(format(as.Date(observation_date), "%Y")))%>%
+  select(Year, TFPUS = RTFPNAUSA632NRUG) #US TFP data indexed for 2017
+
+TFP <- TFPindexUS %>%
+  left_join(TFPUSindex2017, by="Year")%>%
+  filter(Year %in% 2000:2020)%>%
+  mutate(TFP = TFPindex*TFPUS) #Complete TFP data indexed for US 2017
+
+unique(TFP%>%
+  na.omit()%>%select(iso3)) #120 countries remain
 
 #Environmental data
 ENVdata <- read_xlsx("Data_Environmental/GCSI_59a_Per_capita_2000-2020_05162025.xlsx") %>%
@@ -152,6 +185,7 @@ data_full <- ENVdata %>%
   left_join(clusteredData%>%rename(Year = SPI_year),by=c("Country","iso3","Year"))%>%
   left_join(HDI, by=c("Country","iso3","Year"))%>%
   left_join(GDP,by=c("Country","iso3","Year"))%>%
+  left_join(TFP,by=c("Country","iso3","Year"))%>%
   dplyr::select(!ends_with(c(".x",".y")))%>%
   #dplyr::select(!ISO_Country)%>%
   # rename(Country = Country_std,
@@ -177,6 +211,9 @@ data_full <- ENVdata %>%
 data <- data_full%>%
   filter(.imp==1) #Select one imputed set, when these are not needed
 
+# data%>%
+#   select(Country, iso3, Year, GHG,Biodiversity_Impact,Scarce_Water_Consumption,GDP_PPPcap, Population,TFP,HDI )%>%
+#   write.csv("TFPdata.csv")
 
 length(unique(data$Country))
 length(unique(data$Cluster))
@@ -186,9 +223,34 @@ data %>%
   print(n=142)
 
 
-
 titles <- c("GHG", "Blue Water Consumption", "Biodiversity Loss", "NOx")
 units <- c("t CO2 e / cap", "m3 H20 e / cap", "PDF / cap", "kg NOx / cap")
+
+#Compute EF-------------------------------------
+#World average citizen in 2020
+world_citizen <- data%>%
+  filter(Year == 2020)%>%
+  summarise(across(c(GHG, Biodiversity_Impact, Scarce_Water_Consumption), ~ weighted.mean(., w = Population)))
+
+#Normalize by world average citizen
+df_model <- data %>%
+  #pers eq. per indicator
+  mutate(nGHG = GHG/world_citizen$GHG,
+         nBiodiversity_Impact = Biodiversity_Impact / world_citizen$Biodiversity_Impact,
+         nScarce_Water_Consumption = Scarce_Water_Consumption / world_citizen$Scarce_Water_Consumption)%>%
+  
+  #Compute combined score
+  #mutate(pers.eq.mean = rowMeans(select(.,c("nGHG", "nBiodiversity_Impact", "nScarce_Water_Consumption"))))%>%
+  mutate(pers.eq.gMean = (nGHG*nBiodiversity_Impact*nScarce_Water_Consumption)^(1/3))%>%
+  
+  rename(EF = pers.eq.gMean)%>%
+  mutate(lnEF = log(EF))%>%
+  
+  select(iso3, Country, Year, Population, GHG, Biodiversity_Impact, Scarce_Water_Consumption, EF)
+
+
+
+
 
 #Violin plots --------------------------------------------------------------
 ilist <- c("GHG",
@@ -255,7 +317,6 @@ fitBio.wls <- lm(log(Biodiversity_Impact) ~ Year*Country, data = data_wls, weigh
 # AIC(fitBio2)
 finalBio <-fitBio.wls
 plot(finalBio)
-
 # Water consumption
 data_wls <- data%>%
   group_by(Country) %>%
@@ -274,6 +335,30 @@ finalWat <-fitWat.wls
 plot(finalWat)
 
 
+
+#Combined EF
+data_wls <- df_model %>%
+  group_by(Country) %>%
+  mutate(sd_within_Country = sd(log(EF), na.rm = TRUE)) %>%
+  ungroup()%>%
+  mutate(w = 1 / (sd_within_Country^2))
+
+
+
+fitEF <- lm(log(EF) ~ Year*Country, data = data_wls)
+fitEF.wls <- lm(log(EF) ~ Year*Country, data = data_wls, weights = w)
+AIC(fitEF,fitEF.wls) #wls is better
+
+
+summary(fitEF.wls)
+# par(mfrow=c(2,2))
+# plot(fitBio.wls)
+# AIC(fitBio.wls)
+# AIC(fitBio2)
+finalEF <-fitEF.wls
+plot(finalEF)
+
+
 #Get means from models and plot ---------------------------------------------
 #Compute geometric means
 means <- data.frame("Year"=rep(2010,length(unique(data$Country))),
@@ -287,8 +372,8 @@ for (i in 1:length(means$Country)){
   means$Cluster[i] <- as.character(cl)
 }
 
-#Ensure correct format of variables and order of means. #Order clusters by identified level of well being
-means$Cluster <- factor(means$Cluster, levels=c(10,4,1,8,9,7,3,2,5,11,6))
+#Ensure correct format of variables and order of means 
+means$Cluster <- factor(means$Cluster, levels=c(1,2,3,4,5,6,7,8,9,10,11))
 means$Country <- factor(means$Country, levels = means$Country[order(means$Cluster)])
 #means$Country <- factor(means$Country, levels = means$Country[order(means$ExtCluster)])
 
@@ -303,6 +388,9 @@ colnames(means)[8:10] <- c("fitBio","lwrBio","uprBio")
 
 means <- cbind(means,exp(predict(finalWat,newdata = means,interval = "confidence")))
 colnames(means)[11:13] <- c("fitWat","lwrWat","uprWat")
+
+means <- cbind(means,exp(predict(finalEF,newdata = means,interval = "confidence")))
+colnames(means)[14:16] <- c("fitEF","lwrEF","uprEF")
 
 
 #Plot Estimated means of the world
@@ -390,112 +478,42 @@ ggplot(means, aes(x =iso3, y = fitWat, fill = Cluster)) +
 
 
 
-
-#Extract growth rates and plot (old)-------------------------------------------
-model <- finalGHG
-
-#Quick fix due to no GDP data for cuba
-nCountries<-length(grep("Year:",names(model$coefficients)))+1
-
-#Extract ML estimates
-theta_hat <- rep(0,nCountries)
-theta_hat[1] <- model$coefficients[2] #Assign intercept slope to first country
-theta_hat[2:nCountries] <- model$coefficients[grep("Year:",names(model$coefficients))] + model$coefficients[2] #intercept + country slope
-
-
-#(b1+b2) Variance estimate #year:Afghanistan is the intercept
-var <- diag(vcov(model))[grep("Year",rownames(vcov(model)))] #Extract diagonal of covariance matrix to get variance of parameters
-cov <- vcov(model)[grep("Year:",rownames(vcov(model))),"Year"] #Covariances between slope parameters and intercept slope
-
-#Assign variances to countries:
-theta_hat_var <- sapply(1:length(unique(data$Country)),
-                        function(x){ if (x==1){
-                          var[1]
-                        } else{
-                          var[1]+var[x]+ 2*cov[x-1]
-                        }
-                        })
-
-#Name the parameters appropriately
-names(theta_hat_var) <- names(var)
-names(theta_hat_var)[1] <- "Afghanistan"
-
-#Compute standard errors
-theta_hat_SE <- sqrt(theta_hat_var)
-
-#Compute confidence intervals in log domain
-df <- model$df.residual #Degrees of freedom
-alpha <- 0.05
-t_crit <- qt(1 - alpha/2, df)
-log_rate <- cbind(theta_hat,theta_hat-t_crit*theta_hat_SE,theta_hat+t_crit*theta_hat_SE)
-
-#Clean up data frame
-log_rate <- data.frame(log_rate)
-rownames(log_rate) <- gsub("Year:Country","",rownames(log_rate))
-colnames(log_rate)<-c("Rate","lwrRate","uprRate")
-log_rate$Country <- rownames(log_rate)
-
-#Convert to regular domain
-rate <- log_rate%>%
-  mutate(Rate=exp(Rate), lwrRate=exp(lwrRate),uprRate=exp(uprRate))
-
-#Convert to percent change
-rate[,c(1,2,3)] <- (rate[,c(1,2,3)]-1)*100
-
-#Join with clusters
-rates <- left_join(rate,clusters,by="Country")
-rates$Country <- factor(rates$Country, levels = rates$Country[order(rates$cluster,rates$Rate)])
-rates$iso3 <- factor(rates$iso3, levels = rates$iso3[order(rates$cluster,rates$Rate)])
-
-#Plot
-ggplot(rates, aes(x =iso3, y = Rate, fill = factor(cluster))) +
+#EF
+means$iso3 <- factor(means$iso3, levels = means$iso3[order(means$Cluster,means$fitEF)])
+ggplot(means, aes(x =iso3, y = fitEF, fill = Cluster)) +
   geom_col(width = 0.6) +
-  geom_errorbar(aes(ymin = lwrRate, ymax = uprRate), width = 0.2) +
+  #geom_hline(yintercept = 0.4, color = "black", linetype = "solid")+
+  #geom_hline(yintercept = 3.5, color = "black", linetype = "dashed")+
+  geom_errorbar(aes(ymin = lwrEF, ymax = uprEF), width = 0.2) +
+  geom_point(df_model%>%
+               group_by(iso3) %>%
+               summarise(mean_value = mean(EF, na.rm = TRUE)),
+             shape="-",
+             mapping = aes(x = iso3, y = mean_value, fill = iso3),
+             alpha=1,size=4)+
+  #geom_hline(yintercept=3)+
   theme_minimal() +
   labs(
     title = "",
-    y = paste("yearly %-rate of change in", var),
-    x = "Country"
+    y = "pers.eq / cap",
+    x = ""
   ) +
-  #scale_fill_manual(values = cluster_colors)+
+  scale_fill_manual(values = cluster_colors)+
   #scale_color_manual(values = cluster_colors) +
-  guides(fill = "none")+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-#Test mean/rate scatter plot
-test <- left_join(means,rates, by="iso3")
-factor <- c(0.2,0.1)
-scale_factor <- 0.2*max(test$fitGHG, na.rm=TRUE) / max(test$Rate, na.rm=TRUE)
-test$cluster <- factor(test$cluster, levels=c(10,4,1,8,9,7,3,2,5,11,6))
-test$iso3 <- factor(test$iso3,levels=test$iso3[order(test$cluster,test$fitGHG)])
-ggplot(test, aes(x = iso3)) +
-  geom_col(aes(y = fitGHG, fill = factor(cluster)), width = 0.6) +
-  geom_errorbar(aes(ymin = lwrGHG, ymax = uprGHG), width = 0.2) +
-  # Scale y2 up to match y1 axis
-  geom_point(aes(y = Rate * scale_factor), color = "black",size=0.9) +
-  geom_errorbar(aes(ymin = lwrRate* scale_factor, ymax = uprRate* scale_factor), width = 0.2)+
-  scale_y_continuous(
-    name = "t CO2 / cap",
-    sec.axis = sec_axis(~ . / scale_factor, name = "Yearly %-rate of change")
-  ) +
-  theme_minimal() +
-  labs(x = "Country",
-       fill= "Cluster") +
-  theme(
-    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
-    #legend.position = "none"
-  )+
-  scale_fill_manual(values = cluster_colors)
+  #guides(fill = "none")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1,size=10))+
+  theme(legend.position="bottom")+
+  guides(fill = guide_legend(ncol = 11))
 
 
+#write.csv(means,"Figures/Si/Logmodels/Means.csv")
 
-
-#Extract growth rates and plot ver 2-------------------------------------------
-model <- finalBio
+#Extract growth rates and plot-------------------------------------------
+model <- finalEF
 getModel <- function(model){
-  if (colnames(model$model)[1]=="log(GHG)") {c("fitGHG","lwrGHG","uprGHG", "t CO2 / cap")}
+  if (colnames(model$model)[1]=="log(GHG)") {c("fitGHG","lwrGHG","uprGHG", "t CO2e / cap")}
   else if (colnames(model$model)[1]=="log(Biodiversity_Impact)") {c("fitBio","lwrBio","uprBio", "PDF-yr / cap")}
-  else if (colnames(model$model)[1]=="log(Scarce_Water_Consumption)") {c("fitWat","lwrWat","uprWat", "m3 H2O eq. / cap ")}
+  else if (colnames(model$model)[1]=="log(Scarce_Water_Consumption)") {c("fitWat","lwrWat","uprWat", "m3 H2Oe / cap ")}
   else if (colnames(model$model)[1]=="log(EF)") {c("fitEF","lwrEF","uprEF", "pers.yr.eq / cap")}
 }
 
@@ -552,6 +570,7 @@ rates <- left_join(rate,clusters,by="Country")
 rates$Country <- factor(rates$Country, levels = rates$Country[order(rates$cluster,rates$Rate)])
 rates$iso3 <- factor(rates$iso3, levels = rates$iso3[order(rates$cluster,rates$Rate)])
 
+#write.csv(rates,paste0("Figures/Si/Logmodels/","EF","Rates.csv"))
 #Plot
 ggplot(rates, aes(x =iso3, y = Rate, fill = factor(cluster))) +
   geom_col(width = 0.6) +
@@ -604,32 +623,9 @@ ggplot(test, aes(x = iso3)) +
   labs(x = "Country") +
   theme(
     axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
-    legend.position = "none"
-  )
-
-
-
-
-
-
-
-
-#Fit Cluster model for GHG------------------
-library(lme4)
-fit <- lm(log(GHG)~Cluster*log(GDP_PPPcap),
-          data)
-summary(fit)
-
-fitME <- lmer(log(GHG)~Cluster*log(GDP_PPPcap)+(log(GDP_PPPcap)|Country),
-              data)
-
-car::Anova(fitME)
-library(emmeans)
-trend.df <-data.frame( emtrends(fitME,~ Cluster, var="log(GDP_PPPcap)"))
-ggplot(trend.df, aes(x=Cluster, y=log.GDP_PPPcap..trend))+
-  geom_errorbar(data=trend.df, aes(x=Cluster,ymin=lower.CL, ymax=upper.CL))
-
-
+    legend.position = "bottom"
+  )+
+  guides(fill = guide_legend(title = "Cluster",nrow=1))
 
 
 #Fitting multivariable cluster model-------------------------------------------------
@@ -790,6 +786,12 @@ library(patchwork)
 (p1 / p2)
 p2
 
+#Fit model to assess how much the clusters describe differences in GHG----------------
+fit<- lm(log(GHG)~log(GDP_PPP)+Cluster,
+   data=data)
+summary(fit)
+anova(fit)
+pairs(data[,c("Cluster","GHG","GDP_PPP")])
 
 #multilevel model with brms-------------------------
 library(MCMCglmm)

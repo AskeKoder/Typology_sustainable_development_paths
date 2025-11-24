@@ -172,6 +172,7 @@ p <- 2*(1-pnorm(abs(z),0,1))
 print(p)
 car::Anova(fit3,type=2)
 
+
 fit4 <- multinom(cluster ~ settmort+prienr1900,
                  data=df_model,maxit=500)
 summary(fit4)
@@ -186,6 +187,7 @@ df_compare <- df_model%>%
 AIC(multinom(cluster ~ settmort+prienr1900,
          data=df_compare,maxit=500),multinom(cluster ~ colonizer+ settmort+prienr1900,
                                            data=df_compare,maxit=500) )
+
 #Without colonizer is the best
 
 # Make prediction grid

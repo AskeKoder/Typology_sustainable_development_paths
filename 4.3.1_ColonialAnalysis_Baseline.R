@@ -154,7 +154,7 @@ p1 <- ggplot() +
         axis.line = element_blank(),
         axis.ticks = element_blank(),
         axis.title = element_blank())+
-  labs(title="Longest lasting colonizer")+
+  labs(title="Cluster")+
   guides(fill=guide_legend(title="Colonizer",ncol=1))
 p2 <- ggplot() +
   geom_sf(data = world, aes(fill = factor(colonizer)), color = "white",size=0.5)+
@@ -215,6 +215,54 @@ AIC(multinom(cluster ~ settmort+prienr1900,
              data=df_compare,maxit=500),multinom(cluster ~ colonizer+ settmort+prienr1900,
                                                  data=df_compare,maxit=500) )
 #no
+
+
+#Visualize model---------------------------------
+
+# Make prediction grid
+newdata <- expand.grid(
+  colonizer = 
+  prienr1900 = seq(min(df_model$prienr1900,na.rm=TRUE), max(df_model$prienr1900,na.rm=TRUE), length.out = 50),
+  settmort = seq(min(df_model$settmort,na.rm=TRUE), max(df_model$settmort,na.rm=TRUE), length.out = 50)
+)
+
+# Get predicted probabilities
+preds <- predict(fit4, newdata = newdata, type = "probs")
+
+# Convert to long format
+pred_df <- cbind(newdata, preds) %>%
+  tidyr::pivot_longer(cols = -c(settmort,prienr1900),
+                      names_to = "cluster", values_to = "probability")%>%
+  unique()
+# 
+# preds <- data.frame(ggeffects::ggemmeans(fit4, terms=c("prienr1900","settmort [3:7 by=0.4]")))
+# ggplot(preds, aes(x=x, y=predicted,color = response.level))+
+#   geom_line()+
+#   geom_ribbon(
+#     aes(ymin = conf.low, ymax = conf.high, fill = response.level),
+#     alpha = 0.2,
+#     color = NA
+#   )+
+#   labs(x="Primary school enrollment",
+#        y="Probability")+
+#   theme_minimal()+
+#   facet_wrap(~group)
+
+
+library(ggplot2)
+
+
+
+ggplot(pred_df, aes(x = prienr1900, y = settmort, z = probability)) +
+  geom_contour_filled() +
+  geom_point(data=df_model, aes(x=prienr1900, y=settmort,z=0,shape=colonizer),color="salmon")+
+  labs(x="Primary school enrollment (1900)",
+       y="log(settler mortality)",
+       fill="Predicted probability",
+       shape = "Observation and \ncolonizer identity",
+       color=NULL)+
+  theme_minimal() +
+  facet_wrap(~ factor(cluster, levels=1:11))
 
 #Aggregate model------------------------------------------------------
 # #Aggregate clusters not well represented in colonial data
