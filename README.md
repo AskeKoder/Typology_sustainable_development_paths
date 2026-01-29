@@ -1,4 +1,4 @@
-# World Development Article (R analysis)
+# Sustainable Development Paths Article (R analysis)
 
 This repository contains the code and data used for the work: "Turning resources into wellbeing: a global typology of sustainable development paths".
 The workflow builds a multi-source panel dataset (1990-2020), imputes missing values,
