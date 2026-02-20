@@ -16,8 +16,9 @@ exp = "DLSFew_coverage"
 # 0) Read data
 # =========================================================
 data <- read.csv("TFPdata_V2.csv")%>%
-  select(-X)%>%
-  filter(TFP != 0)
+  select(-X)
+#%>%
+#  filter(TFP != 0)
 
 clusters <-readRDS("4_RankedClusters.RDS")%>%
   select(Country,iso3=SPI_countrycode,Cluster = all_of(exp))
@@ -30,8 +31,8 @@ df <- merge(data, clusters, by = c("iso3", "Country")) %>%
     iso3     = factor(iso3),
     country  = iso3,
     year     = Year,
-    lnTFP    = log(TFP),
-    lnGHG     = log(GHG),
+    #lnTFP    = log(TFP),
+    lnGHG    = log(GHG),
     lnEF     = log(GHG),
     lnGDP    = log(GDP_PPPcap)
   ) 
@@ -66,7 +67,7 @@ df <- df %>%
   # keep:
   # - all observations from other clusters
   # - only countries with full panel in clusters 6 and 9
-  filter(!(Cluster %in% c(6, 9)) | n_years == max_years) %>%
+  filter(n_years == max_years) %>%
   select(-n_years, -max_years)
 
 
@@ -115,11 +116,11 @@ for (g in sort(unique(df$Cluster))) {
 
 
 
-# Potential selection: 3,5,6,8,9,10,11
+# Potential selection: 3,4
 
 
 #Test if stationary after differencing
-for (g in c(4,5,6,8)){
+for (g in c(3,4)){
   dg <- df %>% filter(Cluster == g)
   dg <- dg %>%
     group_by(country) %>%
@@ -135,14 +136,14 @@ for (g in c(4,5,6,8)){
   print(testUnitRoot(dg))
 }
 
-# I(1) clusters:  2,3,4,7,11
+# I(1) clusters:  3,4
 
 # Let's affine with Pedronii or KAO test
 # =========================================================
 #### Kao test (evidence of cointegration @ p<0.05)
 # =========================================================
 
-for (g in c(4,5,6,8)){
+for (g in c(3,4)){
   dg <- df %>% filter(Cluster == g)
   cat("\nCluster", g, "- manual Kao test (null: no cointegration)\n")
   model_pool <- plm(lnEF ~ lnGDP + year, data = dg,
@@ -152,7 +153,7 @@ for (g in c(4,5,6,8)){
   print(summary(test))
 }
 
-# Final selection : 2,3,4,7,11
+# Final selection : 3,4
 
 
 # =========================================================
