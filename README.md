@@ -5,6 +5,8 @@ The workflow builds a multi-source panel dataset (1990-2020), imputes missing va
 performs clustering experiments, and runs well-being, environmental, and colonial
 analyses with figures and summary outputs.
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18750965.svg)](https://doi.org/10.5281/zenodo.18750965)
+
 ## Contents
 
 - `1_DataPreparation.R` - loads and harmonizes raw sources (SPI + external indicators)
