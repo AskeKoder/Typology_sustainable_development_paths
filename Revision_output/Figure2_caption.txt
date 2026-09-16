@@ -1,0 +1,32 @@
+Figure 5 | Six improvement regimes of material provisioning, 2000-2020.
+
+Each panel is one regime; each dot is one of eleven decent-living indicators. Improvement
+rates are ordinary-least-squares slopes on year over 2000-2020, in index points per year,
+averaged over the fifteen multiply-imputed datasets. Because a country already close to
+the ceiling on a service cannot improve on it as fast as one starting from a low base,
+each rate is residualised on a cubic polynomial in that country's own year-2000 value of
+the same indicator; the plotted quantity is the regime mean of that residual. Zero
+therefore means a regime advanced that component exactly as fast as countries starting
+from the same position typically did, filled dots to the right mark faster-than-expected
+progress, and open dots to the left mark slower-than-expected progress. This is the space
+in which the regimes were formed: they are the groups obtained by Ward minimum-variance
+clustering on Euclidean distances between these standardised residuals, with the number
+of groups chosen by the C-index and the ensemble partition taken as the Mirkin medoid of
+the fifteen imputation-specific partitions. Table 4 reports the same improvement rates
+unadjusted, in raw points per year; the raw and adjusted quantities disagree in sign for
+eleven of the sixty-six regime-indicator cells, so the table and this figure are not
+alternative displays of one quantity and should be read together. The eleven indicators
+appear in the same order in every panel, grouped by decent-living-standards domain, and
+all six panels share one horizontal scale. Regimes are ordered by mean development level,
+the regime mean of the country's average standardised year-2000 value across the eleven
+indicators, shown in each header with the regime's size and four example countries drawn
+from the 12th, 38th, 62nd and 88th percentile of that regime's own level distribution.
+N = 173 countries.
+
+R1  Moving as expected         n =  94   mean level +0.48   e.g. Germany, UAE, Bosnia & Herz., Ghana
+R2  Advancing on every front   n =  26   mean level -0.02   e.g. Bahrain, Kazakhstan, Morocco, Botswana
+R3  Food, fuel and health lag  n =  17   mean level -0.71   e.g. Guyana, Solomon Islands, Senegal, Burkina Faso
+R4  Water and energy lag       n =  19   mean level -0.81   e.g. Indonesia, Pakistan, Togo, Burundi
+R5  Electrification surge      n =   7   mean level -0.91   e.g. Sao Tome, Bangladesh, Nepal, Cambodia
+R6  Falling behind on every front n =  10   mean level -1.13   e.g. Liberia, Angola, C. African Rep., DR Congo
+
